@@ -59,6 +59,7 @@ class KnowledgeSource:
 
     path: str
     relative_path: str
+    raw_relative_path: str = ""
     size: int = 0
     modified_at: str = ""
     sha256: str = ""
@@ -74,6 +75,7 @@ class KnowledgeSource:
         return cls(
             path=_text(value.get("path")),
             relative_path=_text(value.get("relative_path")),
+            raw_relative_path=_text(value.get("raw_relative_path")),
             size=value.get("size") if isinstance(value.get("size"), int) else 0,
             modified_at=_text(value.get("modified_at")),
             sha256=_text(value.get("sha256")),
@@ -262,3 +264,29 @@ class KnowledgeProject:
             metadata=dict(value.get("metadata") or {}),
         )
 
+
+@dataclass
+class KnowledgeReview:
+    """Durable review gate created from a validation pass."""
+
+    id: str
+    project_id: str
+    status: str
+    checked_pages: int = 0
+    issues: list[dict[str, Any]] = field(default_factory=list)
+    created_at: str = field(default_factory=utc_now)
+
+    def to_dict(self) -> dict[str, Any]:
+        return asdict(self)
+
+    @classmethod
+    def from_dict(cls, value: Mapping[str, Any]) -> KnowledgeReview:
+        raw_issues = value.get("issues")
+        return cls(
+            id=_text(value.get("id")),
+            project_id=_text(value.get("project_id")),
+            status=_text(value.get("status"), "needs_changes"),
+            checked_pages=value.get("checked_pages") if isinstance(value.get("checked_pages"), int) else 0,
+            issues=[dict(item) for item in _list(raw_issues) if isinstance(item, Mapping)],
+            created_at=_text(value.get("created_at"), utc_now()),
+        )

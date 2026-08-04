@@ -6,6 +6,7 @@ from nanobot.knowledge.models import (
     KnowledgePage,
     KnowledgeProject,
     KnowledgeRelation,
+    KnowledgeReview,
     KnowledgeSource,
 )
 from nanobot.knowledge.store import KnowledgeNotFoundError, KnowledgeStore
@@ -16,6 +17,7 @@ __all__ = [
     "KnowledgePage",
     "KnowledgeProject",
     "KnowledgeRelation",
+    "KnowledgeReview",
     "KnowledgeSource",
     "KnowledgeNotFoundError",
     "KnowledgeStore",

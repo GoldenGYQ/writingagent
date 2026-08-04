@@ -14,6 +14,7 @@ from nanobot.knowledge.models import (
     KnowledgePage,
     KnowledgeProject,
     KnowledgeRelation,
+    KnowledgeReview,
     KnowledgeSource,
     new_id,
 )
@@ -25,7 +26,7 @@ _TEXT_EXTENSIONS = frozenset({
 })
 _SKIP_DIRS = frozenset({
     ".git", ".hg", ".svn", ".nanobot", ".venv", "venv", "node_modules",
-    "__pycache__", "dist", "build", "tool-results",
+    "__pycache__", "dist", "build", "tool-results", "wikis",
 })
 
 
@@ -89,12 +90,14 @@ class KnowledgeService:
                 KnowledgeSource(
                     path=str(path),
                     relative_path=relative,
+                    raw_relative_path=Path("sources").joinpath(relative).as_posix(),
                     size=stat.st_size,
                     modified_at=datetime.fromtimestamp(stat.st_mtime, timezone.utc).isoformat(),
                     sha256=hashlib.sha256(raw).hexdigest(),
                     kind="markdown" if path.suffix.lower() in {".md", ".markdown"} else "text",
                 )
             )
+            self.store.write_raw(project.id, sources[-1].raw_relative_path, raw)
 
         project.source_root = str(source_root)
         project.sources = sources
@@ -196,11 +199,31 @@ class KnowledgeService:
     def validate(self, project_id: str) -> dict[str, Any]:
         return validate_project(self.store, project_id)
 
+    def review(self, project_id: str) -> dict[str, Any]:
+        validation = self.validate(project_id)
+        review = KnowledgeReview(
+            id=new_id("review"),
+            project_id=project_id,
+            status="passed" if validation["passed"] else "needs_changes",
+            checked_pages=validation["checked_pages"],
+            issues=validation["issues"],
+        )
+        review_path = self.store.save_review(review)
+        project = self.store.get_project(project_id)
+        project.metadata["last_review"] = review.to_dict()
+        project.updated_at = _now()
+        self.store.save_project(project)
+        return {
+            **validation,
+            "review": review.to_dict(),
+            "review_path": review_path,
+        }
+
     def publish(self, project_id: str) -> dict[str, Any]:
         project = self.store.get_project(project_id)
         if project.phase not in {"compiled", "validated"}:
             self.compile(project_id)
-        validation = self.validate(project_id)
+        validation = self.review(project_id)
         if not validation["passed"]:
             return {"published": False, "validation": validation}
         project = self.store.get_project(project_id)

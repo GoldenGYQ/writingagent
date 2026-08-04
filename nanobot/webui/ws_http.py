@@ -26,7 +26,7 @@ from websockets.http11 import Response
 from nanobot.command.builtin import builtin_command_palette
 from nanobot.cron.session_turns import is_bound_cron_job
 from nanobot.cron.types import CronJob, CronSchedule
-from nanobot.knowledge.store import KnowledgeStore
+from nanobot.knowledge.store import KnowledgeNotFoundError, KnowledgeStore
 from nanobot.runtime_context import public_history_messages
 from nanobot.triggers.local_types import LocalTrigger
 from nanobot.utils.subagent_channel_display import scrub_subagent_messages_for_channel
@@ -422,6 +422,10 @@ class GatewayHTTPHandler:
         if m:
             return self._handle_knowledge_projects(request, m.group(1))
 
+        m = re.match(r"^/api/sessions/([^/]+)/knowledge-projects/([^/]+)$", got)
+        if m:
+            return self._handle_knowledge_project(request, m.group(1), m.group(2))
+
         m = re.match(r"^/api/sessions/([^/]+)/automations$", got)
         if m:
             return self._handle_session_automations(request, m.group(1))
@@ -645,6 +649,75 @@ class GatewayHTTPHandler:
                 }
                 for project in projects[:100]
             ],
+        })
+
+    def _handle_knowledge_project(self, request: WsRequest, key: str, project_id: str) -> Response:
+        if not self.check_api_token(request):
+            return _http_error(401, "Unauthorized")
+        decoded_key = _decode_api_key(key)
+        if decoded_key is None:
+            return _http_error(400, "invalid session key")
+        if not _is_websocket_channel_session_key(decoded_key):
+            return _http_error(404, "session not found")
+        scope = self.workspaces.scope_for_session_key(decoded_key)
+        store = KnowledgeStore(scope.project_path)
+        try:
+            project = store.get_project(unquote(project_id))
+        except KnowledgeNotFoundError:
+            return _http_error(404, "knowledge project not found")
+        project_root = store.project_path(project.id)
+        wiki_root = store.wiki_root(project.id)
+        pages = []
+        if wiki_root.exists():
+            pages = [
+                {
+                    "slug": path.stem,
+                    "path": path.relative_to(scope.project_path).as_posix(),
+                    "type": path.parent.name if path.parent != wiki_root else "overview",
+                }
+                for path in sorted(wiki_root.rglob("*.md"))
+                if path.name != "log.md"
+            ]
+        ir_values = store.list_ir(project.id)
+        entity_count = sum(len(ir.entities) for ir in ir_values)
+        relation_count = sum(len(ir.relations) for ir in ir_values)
+        raw_files = [
+            project_root.joinpath("raw", source.raw_relative_path).relative_to(scope.project_path).as_posix()
+            for source in project.sources
+            if source.raw_relative_path
+        ]
+        ir_files = [
+            project_root.joinpath(path).relative_to(scope.project_path).as_posix()
+            for path in project.ir_files
+        ]
+        return _http_json_response({
+            "project": {
+                "id": project.id,
+                "title": project.title,
+                "status": project.status,
+                "phase": project.phase,
+                "page_count": project.page_count,
+                "source_count": len(project.sources),
+                "updated_at": project.updated_at,
+            },
+            "counts": {
+                "sources": len(project.sources),
+                "ir_files": len(ir_values),
+                "entities": entity_count,
+                "relations": relation_count,
+                "pages": len(pages),
+                "reviews": len(store.list_reviews(project.id)),
+            },
+            "paths": {
+                "raw": project_root.joinpath("raw").relative_to(scope.project_path).as_posix(),
+                "ir": project_root.joinpath("knowledge", "ir").relative_to(scope.project_path).as_posix(),
+                "wiki": wiki_root.relative_to(scope.project_path).as_posix(),
+                "graph": project_root.joinpath("knowledge", "graph", "graph.json").relative_to(scope.project_path).as_posix(),
+            },
+            "raw_files": raw_files[:100],
+            "ir_files": ir_files[:100],
+            "pages": pages[:300],
+            "pages_truncated": len(pages) > 300,
         })
 
     def _handle_session_automations(self, request: WsRequest, key: str) -> Response:

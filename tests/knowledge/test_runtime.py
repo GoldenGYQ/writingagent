@@ -36,6 +36,23 @@ def test_scan_extract_compile_validate_publish_reference_shape(tmp_path):
     project_id = project["id"]
     assert scanned["files"] == 2
     assert (tmp_path / "wikis" / project_id / "schema.md").exists()
+    for relative in (
+        "raw",
+        "assets",
+        "knowledge/ir",
+        "knowledge/reviews",
+        "knowledge/graph",
+        "knowledge/wiki/entities",
+        "knowledge/wiki/concepts",
+        "knowledge/wiki/sources",
+        "knowledge/wiki/synthesis",
+        "knowledge/wiki/queries",
+        "knowledge/wiki/comparisons",
+    ):
+        assert (tmp_path / "wikis" / project_id / relative).is_dir()
+    assert (
+        tmp_path / "wikis" / project_id / "raw" / "sources" / "runtime.md"
+    ).read_text(encoding="utf-8").startswith("# Agent Runtime")
     manifest = tmp_path / "wikis" / project_id / "knowledge" / "manifest.json"
     assert json.loads(manifest.read_text(encoding="utf-8"))["project_id"] == project_id
 
@@ -83,6 +100,9 @@ def test_scan_extract_compile_validate_publish_reference_shape(tmp_path):
 
     validation = service.validate(project_id)
     assert validation["passed"] is True, validation
+    review = service.review(project_id)
+    assert review["review"]["status"] == "passed"
+    assert (project_path / "knowledge" / "reviews" / f"{review['review']['id']}.json").exists()
     published = service.publish(project_id)
     assert published["published"] is True
     assert KnowledgeStore(tmp_path).get_project(project_id).phase == "published"

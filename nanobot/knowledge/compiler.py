@@ -47,6 +47,11 @@ def _unique(values: list[str]) -> list[str]:
     return result
 
 
+def _canonical_slug(value: str, known_slugs: set[str]) -> str:
+    slug = safe_slug(value)
+    return next((known for known in known_slugs if known.casefold() == slug.casefold()), slug)
+
+
 def _frontmatter_list(value: Any) -> str:
     return json.dumps(_unique([str(item) for item in value if str(item).strip()]), ensure_ascii=False)
 
@@ -162,10 +167,17 @@ def _fallback_source_page(source_path: str, content: str) -> KnowledgePage:
     )
 
 
-def _read_source_text(project: KnowledgeProject, source_path: str) -> str:
-    path = Path(source_path)
-    if not path.is_absolute():
-        path = Path(project.source_root) / path
+def _read_source_text(store: KnowledgeStore, project: KnowledgeProject, source_path: str) -> str:
+    source = next(
+        (item for item in project.sources if item.relative_path == source_path),
+        None,
+    )
+    if source is not None and source.raw_relative_path:
+        path = store.raw_path(project.id, source.raw_relative_path)
+    else:
+        path = Path(source_path)
+        if not path.is_absolute():
+            path = Path(project.source_root) / path
     try:
         return path.read_text(encoding="utf-8")
     except (OSError, UnicodeDecodeError):
@@ -186,7 +198,7 @@ def compile_project(store: KnowledgeStore, project_id: str) -> dict[str, Any]:
             if (page := _page_from_entity(entity, ir.source_path)) is not None
         )
         if not pages:
-            pages = [_fallback_source_page(ir.source_path, _read_source_text(project, ir.source_path))]
+            pages = [_fallback_source_page(ir.source_path, _read_source_text(store, project, ir.source_path))]
         for page in pages:
             page.type = page.type if page.type in PAGE_TYPES else "concept"
             page.slug = safe_slug(page.slug or page.title)
@@ -256,11 +268,18 @@ def compile_project(store: KnowledgeStore, project_id: str) -> dict[str, Any]:
     graph_edges: list[dict[str, Any]] = []
     for page in compiled:
         for target in page.related:
-            if target in known_slugs:
-                graph_edges.append({"source": page.slug, "target": target, "relation": "related"})
+            graph_edges.append({
+                "source": page.slug,
+                "target": _canonical_slug(target, known_slugs),
+                "relation": "related",
+            })
     for relation in relations:
         if relation.source and relation.target:
-            graph_edges.append(relation.to_dict())
+            graph_edges.append({
+                **relation.to_dict(),
+                "source": _canonical_slug(relation.source, known_slugs),
+                "target": _canonical_slug(relation.target, known_slugs),
+            })
     graph = {"version": 1, "nodes": graph_nodes, "edges": graph_edges}
     graph_path = store.project_path(project_id) / "knowledge" / "graph" / "graph.json"
     store._write_json(graph_path, graph)
@@ -314,6 +333,7 @@ def validate_project(store: KnowledgeStore, project_id: str) -> dict[str, Any]:
             if path.name != "log.md"
         ]
     known_slugs: set[str] = set()
+    source_paths = {source.relative_path for source in project.sources}
     for path, content in pages:
         metadata, _ = parse_frontmatter(content)
         page_type = str(metadata.get("type") or "")
@@ -329,11 +349,60 @@ def validate_project(store: KnowledgeStore, project_id: str) -> dict[str, Any]:
                 issues.append({"kind": "frontmatter", "path": str(path), "message": f"missing {key}"})
         if page_type in {"entity", "concept", "source"} and not metadata.get("sources"):
             issues.append({"kind": "evidence", "path": str(path), "message": "page has no source evidence"})
+        if isinstance(metadata.get("sources"), list):
+            for source in metadata["sources"]:
+                if source_paths and source not in source_paths:
+                    issues.append({
+                        "kind": "evidence",
+                        "path": str(path),
+                        "message": f"unknown source evidence: {source}",
+                    })
     for path, content in pages:
         for target in _WIKILINK_RE.findall(content):
-            target_slug = safe_slug(target.strip())
+            target_slug = _canonical_slug(target.strip(), known_slugs)
             if target_slug not in known_slugs:
                 issues.append({"kind": "wikilink", "path": str(path), "message": f"missing target [[{target}]]"})
+    for path, content in pages:
+        metadata, _ = parse_frontmatter(content)
+        related = metadata.get("related") if isinstance(metadata.get("related"), list) else []
+        for target in related:
+            target_slug = _canonical_slug(str(target), known_slugs)
+            if target_slug not in known_slugs:
+                issues.append({
+                    "kind": "wikilink",
+                    "path": str(path),
+                    "message": f"missing related target [[{target}]]",
+                })
+    graph_path = store.project_path(project_id) / "knowledge" / "graph" / "graph.json"
+    if graph_path.exists():
+        try:
+            graph = json.loads(graph_path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            graph = {}
+            issues.append({"kind": "graph", "path": str(graph_path), "message": "graph.json is unreadable"})
+        graph_values = graph if isinstance(graph, dict) else {}
+        graph_nodes = {
+            node.get("id")
+            for node in graph_values.get("nodes", [])
+            if isinstance(node, dict) and isinstance(node.get("id"), str)
+        }
+        for edge in graph_values.get("edges", []):
+            if not isinstance(edge, dict):
+                continue
+            source = edge.get("source")
+            target = edge.get("target")
+            if source not in graph_nodes or target not in graph_nodes:
+                issues.append({
+                    "kind": "graph",
+                    "path": str(graph_path),
+                    "message": f"edge endpoint missing: {source} -> {target}",
+                })
+            if edge.get("relation") != "related" and not edge.get("evidence"):
+                issues.append({
+                    "kind": "evidence",
+                    "path": str(graph_path),
+                    "message": f"relation has no evidence: {source} -> {target}",
+                })
     project.phase = "validated" if not issues else "validation_failed"
     project.metadata["last_validation"] = {
         "passed": not issues,

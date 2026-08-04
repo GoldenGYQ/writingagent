@@ -1474,6 +1474,28 @@ export interface KnowledgeProjectsPayload {
   projects: KnowledgeProjectSummary[];
 }
 
+export interface KnowledgeProjectDetailPayload {
+  project: KnowledgeProjectSummary;
+  counts: {
+    sources: number;
+    ir_files: number;
+    entities: number;
+    relations: number;
+    pages: number;
+    reviews: number;
+  };
+  paths: {
+    raw: string;
+    ir: string;
+    wiki: string;
+    graph: string;
+  };
+  raw_files?: string[];
+  ir_files?: string[];
+  pages: Array<{ slug: string; path: string; type: string }>;
+  pages_truncated?: boolean;
+}
+
 export type Outbound =
   | { type: "new_chat"; workspace_scope?: WorkspaceScopePayload }
   | { type: "fork_chat"; source_chat_id: string; before_user_index: number; title?: string }

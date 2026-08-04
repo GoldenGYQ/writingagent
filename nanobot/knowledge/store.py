@@ -10,7 +10,7 @@ from pathlib import Path
 from tempfile import NamedTemporaryFile
 from typing import Any, cast
 
-from nanobot.knowledge.models import KnowledgeIR, KnowledgePage, KnowledgeProject
+from nanobot.knowledge.models import KnowledgeIR, KnowledgePage, KnowledgeProject, KnowledgeReview
 
 # Wiki slugs may be Chinese or other Unicode text.  They still must be a
 # single safe path component and must not contain traversal or Windows-invalid
@@ -73,6 +73,26 @@ class KnowledgeStore:
             if temp_path.exists():
                 temp_path.unlink()
 
+    @staticmethod
+    def _write_bytes(path: Path, content: bytes) -> None:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        with NamedTemporaryFile(
+            mode="wb",
+            dir=path.parent,
+            prefix=f".{path.name}.",
+            suffix=".tmp",
+            delete=False,
+        ) as temp:
+            temp_path = Path(temp.name)
+            temp.write(content)
+            temp.flush()
+            os.fsync(temp.fileno())
+        try:
+            os.replace(temp_path, path)
+        finally:
+            if temp_path.exists():
+                temp_path.unlink()
+
     @classmethod
     def _write_json(cls, path: Path, value: dict[str, Any]) -> None:
         cls._write_text(path, json.dumps(value, ensure_ascii=False, indent=2) + "\n")
@@ -95,9 +115,24 @@ class KnowledgeStore:
     def create_project(self, project: KnowledgeProject) -> KnowledgeProject:
         if self.project_path(project.id).exists():
             raise KnowledgeStoreError(f"knowledge project already exists: {project.id}")
+        project_root = self.project_path(project.id)
+        for relative in (
+            "raw",
+            "assets",
+            "knowledge/ir",
+            "knowledge/reviews",
+            "knowledge/graph",
+            "knowledge/wiki/entities",
+            "knowledge/wiki/concepts",
+            "knowledge/wiki/sources",
+            "knowledge/wiki/synthesis",
+            "knowledge/wiki/queries",
+            "knowledge/wiki/comparisons",
+        ):
+            (project_root / relative).mkdir(parents=True, exist_ok=True)
         self.save_project(project)
         self._write_text(
-            self.project_path(project.id) / "schema.md",
+            project_root / "schema.md",
             _DEFAULT_SCHEMA,
         )
         return project
@@ -147,8 +182,45 @@ class KnowledgeStore:
                 continue
         return values
 
+    def review_root(self, project_id: str) -> Path:
+        return self.project_path(project_id) / "knowledge" / "reviews"
+
+    def save_review(self, review: KnowledgeReview) -> str:
+        path = self.review_root(review.project_id) / f"{review.id}.json"
+        self._write_json(path, review.to_dict())
+        return path.relative_to(self.project_path(review.project_id)).as_posix()
+
+    def list_reviews(self, project_id: str) -> list[KnowledgeReview]:
+        if not self.review_root(project_id).exists():
+            return []
+        values: list[KnowledgeReview] = []
+        for path in sorted(self.review_root(project_id).glob("*.json"), reverse=True):
+            try:
+                values.append(KnowledgeReview.from_dict(self._read_json(path)))
+            except KnowledgeStoreError:
+                continue
+        return values
+
     def wiki_root(self, project_id: str) -> Path:
         return self.project_path(project_id) / "knowledge" / "wiki"
+
+    def raw_root(self, project_id: str) -> Path:
+        return self.project_path(project_id) / "raw"
+
+    def raw_path(self, project_id: str, relative_path: str) -> Path:
+        relative = Path(relative_path)
+        if relative.is_absolute() or any(part in {"", ".", ".."} for part in relative.parts):
+            raise KnowledgeStoreError("raw path must be a relative file path")
+        root = self.raw_root(project_id).resolve()
+        path = (self.raw_root(project_id) / relative).resolve()
+        if not path.is_relative_to(root):
+            raise KnowledgeStoreError("raw path escapes project")
+        return path
+
+    def write_raw(self, project_id: str, relative_path: str, content: bytes) -> Path:
+        path = self.raw_path(project_id, relative_path)
+        self._write_bytes(path, content)
+        return path
 
     def page_path(self, project_id: str, page_type: str, slug: str) -> Path:
         self.validate_id(slug, "page_slug")

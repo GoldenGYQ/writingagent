@@ -300,7 +300,7 @@ class KnowledgeValidateTool(Tool, _KnowledgeToolMixin):
             project_id = project_id or self._context().get("project_id")
             if not project_id:
                 return ToolResult.error("Error: provide project_id or call knowledge_scan first.")
-            result = KnowledgeService(_store(self._workspace)).validate(project_id)
+            result = KnowledgeService(_store(self._workspace)).review(project_id)
             self._set_context(project_id=project_id, phase="validated" if result["passed"] else "validation_failed")
             compact = dict(result)
             if isinstance(compact.get("issues"), list):

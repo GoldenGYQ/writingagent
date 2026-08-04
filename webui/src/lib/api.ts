@@ -9,6 +9,7 @@ import type {
   CliAppsPayload,
   FilePreviewPayload,
   KnowledgeProjectsPayload,
+  KnowledgeProjectDetailPayload,
   WorkspaceTreePayload,
   ImageGenerationSettingsUpdate,
   McpPresetsPayload,
@@ -277,6 +278,20 @@ export async function fetchKnowledgeProjects(
 ): Promise<KnowledgeProjectsPayload> {
   return request<KnowledgeProjectsPayload>(
     `${base}/api/sessions/${encodeURIComponent(key)}/knowledge-projects`,
+    token,
+    undefined,
+    API_READ_TIMEOUT_MS,
+  );
+}
+
+export async function fetchKnowledgeProject(
+  token: string,
+  key: string,
+  projectId: string,
+  base: string = "",
+): Promise<KnowledgeProjectDetailPayload> {
+  return request<KnowledgeProjectDetailPayload>(
+    `${base}/api/sessions/${encodeURIComponent(key)}/knowledge-projects/${encodeURIComponent(projectId)}`,
     token,
     undefined,
     API_READ_TIMEOUT_MS,
