@@ -189,6 +189,45 @@ def _read_source_text(store: KnowledgeStore, project: KnowledgeProject, source_p
         return ""
 
 
+def _extraction_conflicts(store: KnowledgeStore, project_id: str) -> list[dict[str, Any]]:
+    """Find contradictory page drafts from different source documents."""
+    observations: dict[tuple[str, str], list[tuple[str, str]]] = defaultdict(list)
+    for ir in store.list_ir(project_id):
+        pages = list(ir.pages)
+        pages.extend(
+            KnowledgePage(
+                type=str(entity.type or "entity"),
+                title=entity.name,
+                slug=safe_slug(entity.name),
+                body=entity.description,
+                source_path=entity.source_path or ir.source_path,
+            )
+            for entity in ir.entities
+            if entity.name.strip()
+        )
+        for page in pages:
+            source_path = page.source_path or ir.source_path
+            body = page.body.strip()
+            if not source_path or not body:
+                continue
+            key = (page.type, safe_slug(page.slug or page.title))
+            observations[key].append((source_path, body))
+
+    issues: list[dict[str, Any]] = []
+    for (page_type, slug), values in observations.items():
+        sources = sorted({source for source, _ in values})
+        bodies = {body for _, body in values}
+        if len(sources) < 2 or len(bodies) < 2:
+            continue
+        issues.append({
+            "kind": "conflict",
+            "path": f"knowledge/ir/{page_type}/{slug}",
+            "message": f"conflicting extracted content for {page_type}/{slug} from {len(sources)} sources",
+            "sources": sources[:20],
+        })
+    return issues
+
+
 def compile_project(store: KnowledgeStore, project_id: str) -> dict[str, Any]:
     project = store.get_project(project_id)
     ir_values = store.list_ir(project_id)
@@ -338,6 +377,7 @@ def validate_project(store: KnowledgeStore, project_id: str) -> dict[str, Any]:
         ]
     known_slugs: set[str] = set()
     source_paths = {source.relative_path for source in project.sources}
+    issues.extend(_extraction_conflicts(store, project_id))
     for path, content in pages:
         metadata, _ = parse_frontmatter(content)
         page_type = str(metadata.get("type") or "")
