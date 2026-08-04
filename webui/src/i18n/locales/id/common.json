@@ -1009,7 +1009,25 @@
       "newChat": "Mulai topik baru",
       "toggleTheme": "Alihkan tema dari header",
       "settings": "Buka pengaturan",
-      "sessionInfo": "Detail sesi"
+      "sessionInfo": "Detail sesi",
+      "workspaceToggle": "Alihkan ruang kerja dokumen"
+    },
+    "workspace": {
+      "title": "Ruang kerja dokumen",
+      "toggle": "Alihkan ruang kerja dokumen",
+      "explorer": "Penjelajah ruang kerja",
+      "preview": "Pratinjau dokumen",
+      "recent": "Perubahan terbaru",
+      "loading": "Memuat ruang kerja...",
+      "empty": "Tidak ada file di ruang kerja ini",
+      "selectFile": "Pilih file untuk dipratinjau",
+      "refresh": "Segarkan ruang kerja",
+      "close": "Tutup ruang kerja dokumen",
+      "resize": "Ubah ukuran ruang kerja dokumen",
+      "explorerResize": "Ubah ukuran pohon file",
+      "collapseExplorer": "Ciutkan pohon file",
+      "expandExplorer": "Perluas pohon file",
+      "treeError": "Tidak dapat memuat file ruang kerja"
     },
     "sessionInfo": {
       "title": "Sesi",
@@ -1208,7 +1226,11 @@
         "default": "Izin default",
         "defaultShort": "Default",
         "full": "Akses penuh",
-        "fullShort": "Penuh"
+        "fullShort": "Penuh",
+        "executionAria": "Kebijakan eksekusi perubahan file",
+        "readOnly": "Hanya baca",
+        "ask": "Tanya sebelum menerapkan",
+        "auto": "Terapkan otomatis"
       }
     },
     "scrollToBottom": "Gulir ke bawah",
@@ -1288,7 +1310,8 @@
     "failed": "Tidak dapat mempratinjau file ini.",
     "routeMissing": "Pratinjau file memerlukan gateway terbaru. Mulai ulang nanobot gateway lalu coba lagi.",
     "resize": "Ubah ukuran pratinjau file",
-    "truncated": "Pratinjau dipotong karena file ini besar."
+    "truncated": "Pratinjau dipotong karena file ini besar.",
+    "quoteSelection": "Kutip pilihan"
   },
   "code": {
     "fallbackLanguage": "kode",

@@ -1023,7 +1023,25 @@
       "newChat": "Iniciar um novo tópico",
       "toggleTheme": "Alternar tema pelo cabeçalho",
       "settings": "Abrir configurações",
-      "sessionInfo": "Detalhes da sessão"
+      "sessionInfo": "Detalhes da sessão",
+      "workspaceToggle": "Alternar o espaço de trabalho de documentos"
+    },
+    "workspace": {
+      "title": "Espaço de trabalho de documentos",
+      "toggle": "Alternar o espaço de trabalho de documentos",
+      "explorer": "Explorador do espaço de trabalho",
+      "preview": "Pré-visualização do documento",
+      "recent": "Alterações recentes",
+      "loading": "Carregando o espaço de trabalho...",
+      "empty": "Não há arquivos neste espaço de trabalho",
+      "selectFile": "Selecione um arquivo para visualizar",
+      "refresh": "Atualizar espaço de trabalho",
+      "close": "Fechar o espaço de trabalho de documentos",
+      "resize": "Redimensionar o espaço de trabalho de documentos",
+      "explorerResize": "Redimensionar a árvore de arquivos",
+      "collapseExplorer": "Recolher a árvore de arquivos",
+      "expandExplorer": "Expandir a árvore de arquivos",
+      "treeError": "Não foi possível carregar os arquivos do espaço de trabalho"
     },
     "sessionInfo": {
       "title": "Sessão",
@@ -1222,7 +1240,11 @@
         "default": "Permissão padrão",
         "defaultShort": "Padrão",
         "full": "Acesso total",
-        "fullShort": "Total"
+        "fullShort": "Total",
+        "executionAria": "Política de execução de alterações de arquivos",
+        "readOnly": "Somente leitura",
+        "ask": "Perguntar antes de aplicar",
+        "auto": "Aplicar automaticamente"
       }
     },
     "scrollToBottom": "Rolar para o final",
@@ -1302,7 +1324,8 @@
     "failed": "Não foi possível pré-visualizar este arquivo.",
     "routeMissing": "A pré-visualização de arquivo precisa do gateway mais recente. Reinicie o nanobot gateway e tente novamente.",
     "resize": "Redimensionar pré-visualização de arquivo",
-    "truncated": "A pré-visualização foi truncada porque este arquivo é grande."
+    "truncated": "A pré-visualização foi truncada porque este arquivo é grande.",
+    "quoteSelection": "Citar seleção"
   },
   "code": {
     "fallbackLanguage": "código",

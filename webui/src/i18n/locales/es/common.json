@@ -1010,7 +1010,25 @@
       "newChat": "Iniciar un tema nuevo",
       "toggleTheme": "Cambiar tema desde el encabezado",
       "settings": "Abrir configuración",
-      "sessionInfo": "Detalles de la sesión"
+      "sessionInfo": "Detalles de la sesión",
+      "workspaceToggle": "Alternar el espacio de trabajo de documentos"
+    },
+    "workspace": {
+      "title": "Espacio de trabajo de documentos",
+      "toggle": "Alternar el espacio de trabajo de documentos",
+      "explorer": "Explorador del espacio de trabajo",
+      "preview": "Vista previa del documento",
+      "recent": "Cambios recientes",
+      "loading": "Cargando el espacio de trabajo...",
+      "empty": "No hay archivos en este espacio de trabajo",
+      "selectFile": "Selecciona un archivo para previsualizar",
+      "refresh": "Actualizar el espacio de trabajo",
+      "close": "Cerrar el espacio de trabajo de documentos",
+      "resize": "Cambiar el tamaño del espacio de trabajo de documentos",
+      "explorerResize": "Cambiar el tamaño del árbol de archivos",
+      "collapseExplorer": "Contraer el árbol de archivos",
+      "expandExplorer": "Expandir el árbol de archivos",
+      "treeError": "No se pudieron cargar los archivos del espacio de trabajo"
     },
     "sessionInfo": {
       "title": "Sesión",
@@ -1209,7 +1227,11 @@
         "default": "Permiso predeterminado",
         "defaultShort": "Predeterm.",
         "full": "Acceso completo",
-        "fullShort": "Completo"
+        "fullShort": "Completo",
+        "executionAria": "Política de ejecución de cambios de archivos",
+        "readOnly": "Solo lectura",
+        "ask": "Preguntar antes de aplicar",
+        "auto": "Aplicar automáticamente"
       }
     },
     "scrollToBottom": "Desplazarse al final",
@@ -1289,7 +1311,8 @@
     "failed": "No se pudo previsualizar este archivo.",
     "routeMissing": "La vista previa necesita el gateway más reciente. Reinicia nanobot gateway e inténtalo de nuevo.",
     "resize": "Cambiar el tamaño de la vista previa",
-    "truncated": "La vista previa está truncada porque el archivo es grande."
+    "truncated": "La vista previa está truncada porque el archivo es grande.",
+    "quoteSelection": "Citar selección"
   },
   "code": {
     "fallbackLanguage": "código",

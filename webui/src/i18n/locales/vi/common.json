@@ -1009,7 +1009,25 @@
       "newChat": "Bắt đầu chủ đề mới",
       "toggleTheme": "Chuyển chủ đề từ header",
       "settings": "Mở cài đặt",
-      "sessionInfo": "Chi tiết phiên"
+      "sessionInfo": "Chi tiết phiên",
+      "workspaceToggle": "Bật/tắt không gian làm việc tài liệu"
+    },
+    "workspace": {
+      "title": "Không gian làm việc tài liệu",
+      "toggle": "Bật/tắt không gian làm việc tài liệu",
+      "explorer": "Trình khám phá không gian làm việc",
+      "preview": "Xem trước tài liệu",
+      "recent": "Thay đổi gần đây",
+      "loading": "Đang tải không gian làm việc...",
+      "empty": "Không có tệp trong không gian làm việc này",
+      "selectFile": "Chọn tệp để xem trước",
+      "refresh": "Làm mới không gian làm việc",
+      "close": "Đóng không gian làm việc tài liệu",
+      "resize": "Đổi kích thước không gian làm việc tài liệu",
+      "explorerResize": "Đổi kích thước cây tệp",
+      "collapseExplorer": "Thu gọn cây tệp",
+      "expandExplorer": "Mở rộng cây tệp",
+      "treeError": "Không thể tải các tệp trong không gian làm việc"
     },
     "sessionInfo": {
       "title": "Phiên",
@@ -1208,7 +1226,11 @@
         "default": "Quyền mặc định",
         "defaultShort": "Mặc định",
         "full": "Toàn quyền truy cập",
-        "fullShort": "Toàn quyền"
+        "fullShort": "Toàn quyền",
+        "executionAria": "Chính sách thực thi thay đổi tệp",
+        "readOnly": "Chỉ đọc",
+        "ask": "Hỏi trước khi áp dụng",
+        "auto": "Tự động áp dụng"
       }
     },
     "scrollToBottom": "Cuộn xuống cuối",
@@ -1288,7 +1310,8 @@
     "failed": "Không thể xem trước tệp này.",
     "routeMissing": "Xem trước tệp cần gateway mới nhất. Hãy khởi động lại nanobot gateway rồi thử lại.",
     "resize": "Đổi kích thước bản xem trước tệp",
-    "truncated": "Bản xem trước bị cắt vì tệp này lớn."
+    "truncated": "Bản xem trước bị cắt vì tệp này lớn.",
+    "quoteSelection": "Trích dẫn lựa chọn"
   },
   "code": {
     "fallbackLanguage": "mã",

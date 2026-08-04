@@ -1009,7 +1009,25 @@
       "newChat": "Démarrer un nouveau sujet",
       "toggleTheme": "Changer le thème depuis l’en-tête",
       "settings": "Ouvrir les paramètres",
-      "sessionInfo": "Détails de la session"
+      "sessionInfo": "Détails de la session",
+      "workspaceToggle": "Afficher ou masquer l’espace de travail des documents"
+    },
+    "workspace": {
+      "title": "Espace de travail des documents",
+      "toggle": "Afficher ou masquer l’espace de travail des documents",
+      "explorer": "Explorateur de l’espace de travail",
+      "preview": "Aperçu du document",
+      "recent": "Modifications récentes",
+      "loading": "Chargement de l’espace de travail...",
+      "empty": "Aucun fichier dans cet espace de travail",
+      "selectFile": "Sélectionnez un fichier à prévisualiser",
+      "refresh": "Actualiser l’espace de travail",
+      "close": "Fermer l’espace de travail des documents",
+      "resize": "Redimensionner l’espace de travail des documents",
+      "explorerResize": "Redimensionner l’arborescence des fichiers",
+      "collapseExplorer": "Réduire l’arborescence des fichiers",
+      "expandExplorer": "Développer l’arborescence des fichiers",
+      "treeError": "Impossible de charger les fichiers de l’espace de travail"
     },
     "sessionInfo": {
       "title": "Session",
@@ -1208,7 +1226,11 @@
         "default": "Autorisation par défaut",
         "defaultShort": "Par défaut",
         "full": "Accès complet",
-        "fullShort": "Complet"
+        "fullShort": "Complet",
+        "executionAria": "Politique d’exécution des modifications de fichiers",
+        "readOnly": "Lecture seule",
+        "ask": "Demander avant application",
+        "auto": "Application automatique"
       }
     },
     "scrollToBottom": "Faire défiler vers le bas",
@@ -1288,7 +1310,8 @@
     "failed": "Impossible de prévisualiser ce fichier.",
     "routeMissing": "L’aperçu du fichier nécessite le dernier gateway. Redémarrez nanobot gateway puis réessayez.",
     "resize": "Redimensionner l’aperçu du fichier",
-    "truncated": "L’aperçu est tronqué car le fichier est volumineux."
+    "truncated": "L’aperçu est tronqué car le fichier est volumineux.",
+    "quoteSelection": "Citer la sélection"
   },
   "code": {
     "fallbackLanguage": "code",
