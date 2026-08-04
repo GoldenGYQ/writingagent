@@ -83,12 +83,38 @@ def render_page(page: KnowledgePage) -> str:
 
 
 def parse_frontmatter(content: str) -> tuple[dict[str, Any], str]:
-    """Parse the small YAML subset emitted by :func:`render_page`."""
+    """Parse the reference wiki YAML frontmatter safely.
+
+    Nanobot emits JSON-compatible lists, while existing BoClaw-style wikis
+    commonly use unquoted YAML scalars such as ``tags: [Agent, 运行时]``.
+    ``BaseLoader``-style coercion through ``safe_load`` preserves both forms
+    without constructing arbitrary Python objects; the small line parser below
+    remains a fallback for malformed legacy pages.
+    """
     if not content.startswith("---"):
         return {}, content
     parts = content.split("---", 2)
     if len(parts) != 3:
         return {}, content
+    try:
+        import yaml
+
+        loaded = yaml.safe_load(parts[1])
+        if isinstance(loaded, dict):
+            metadata: dict[str, Any] = {}
+            for key, value in loaded.items():
+                normalized_key = str(key)
+                if isinstance(value, list):
+                    metadata[normalized_key] = [str(item) for item in value if item is not None]
+                elif value is None:
+                    metadata[normalized_key] = ""
+                else:
+                    metadata[normalized_key] = str(value)
+            return metadata, parts[2].lstrip("\r\n")
+    except Exception:
+        # Keep the legacy parser as a best-effort fallback for incomplete
+        # frontmatter; validation will still report malformed fields.
+        pass
     metadata: dict[str, Any] = {}
     for line in parts[1].splitlines():
         if ":" not in line:

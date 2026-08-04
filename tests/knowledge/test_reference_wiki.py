@@ -6,6 +6,7 @@ import pytest
 
 from nanobot.agent.tools.context import RequestContext, request_context
 from nanobot.agent.tools.knowledge import KnowledgeSearchTool
+from nanobot.knowledge.compiler import parse_frontmatter
 from nanobot.knowledge.store import KnowledgeStore
 from nanobot.security.workspace_access import (
     bind_workspace_scope,
@@ -52,6 +53,9 @@ def test_reference_shaped_wiki_is_discovered_without_writing_metadata(tmp_path) 
     assert project.sources[0].raw_relative_path == "sources/doc/README.md"
     assert not (project_root / "project.json").exists()
 
+    metadata, _ = parse_frontmatter(page.read_text(encoding="utf-8"))
+    assert metadata["tags"] == ["Agent"]
+
 
 @pytest.mark.asyncio
 async def test_reference_wiki_search_returns_raw_source_citation(tmp_path) -> None:
@@ -92,7 +96,7 @@ async def test_reference_wiki_search_returns_raw_source_citation(tmp_path) -> No
     token = bind_workspace_scope(scope)
     try:
         with request_context(request):
-            result = await search.execute("Agent Runtime", project_id=project.id)
+            result = await search.execute("Agent Runtime", project_id=project.id, tag="runtime")
     finally:
         reset_workspace_scope(token)
 
