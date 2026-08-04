@@ -445,6 +445,14 @@ function KnowledgeGraphPreview({
         },
       })),
     ];
+    const theme = getComputedStyle(container);
+    const hslVariable = (name: string, fallback: string) => {
+      const value = theme.getPropertyValue(name).trim();
+      return value ? `hsl(${value})` : fallback;
+    };
+    const primaryColor = hslVariable("--primary", "#6366f1");
+    const foregroundColor = hslVariable("--foreground", "#334155");
+    const mutedColor = hslVariable("--muted-foreground", "#64748b");
 
     let instance: cytoscape.Core;
     try {
@@ -456,9 +464,9 @@ function KnowledgeGraphPreview({
           {
             selector: "node",
             style: {
-              "background-color": "hsl(var(--primary))",
+              "background-color": primaryColor,
               "background-opacity": 0.8,
-              color: "hsl(var(--foreground))",
+              color: foregroundColor,
               label: "data(label)",
               "font-size": 7,
               "text-wrap": "ellipsis",
@@ -473,9 +481,9 @@ function KnowledgeGraphPreview({
             selector: "edge",
             style: {
               width: 1,
-              "line-color": "hsl(var(--muted-foreground))",
+              "line-color": mutedColor,
               "line-opacity": 0.35,
-              "target-arrow-color": "hsl(var(--muted-foreground))",
+              "target-arrow-color": mutedColor,
               "target-arrow-shape": "triangle",
               "curve-style": "bezier",
             },
