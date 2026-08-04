@@ -90,6 +90,6 @@ Writing Agent 集成已完成后端第一步：`knowledge_search` 会返回并�
 ## 2026-08-05 验证记录
 
 - 真实参考目录 `D:\Users\gyq16\Desktop\PRJ\NANOTEST2\wikis` 可被只读发现为“项目知识库”：185 个 Wiki 页面、14 个原始来源，状态为 `published`。
-- `.venv\Scripts\python.exe -m pytest tests/knowledge tests/writing -q`：24 passed；Knowledge/Writing 相关 Ruff 检查通过。
-- WebUI 的 i18n、文件预览、多行引用与 ThreadShell 定向测试：76 passed；所有 locale 的资源键结构已对齐。
+- `.venv\Scripts\python.exe -m pytest tests/knowledge tests/writing -q`：25 passed；Knowledge/Writing 相关 Ruff 检查通过。
+- WebUI 的 i18n、文件预览、多行引用与 ThreadShell 定向测试：76 passed；本次复跑通过，所有 locale 的资源键结构已对齐。
 - 全量 WebUI 在 `--testTimeout=10000` 下为 903/904；剩余失败是未修改的 `ThreadViewport` 动画时序断言（期望 2400，实际值接近目标），不属于 Knowledge/Workspace 变更。
