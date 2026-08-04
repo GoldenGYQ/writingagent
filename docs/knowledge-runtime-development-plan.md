@@ -26,6 +26,7 @@ Knowledge Service（核心逻辑）
 - [x] 编译/校验异常会将 `compile_failed` / `validation_failed` 与有界 `last_error` 写回 task/project，便于恢复和诊断。
 - [x] `compiler.py`：frontmatter 页面、`index.md`、`overview.md`、`log.md`、`graph.json`；重复编译合并正文且不重复写 ingest 日志。
 - [x] 冲突审查：同一类型/slug 来自不同 source 且正文不一致时生成 `conflict` Review issue，并阻止发布。
+- [x] 关系证据校验：`source_path` 必须来自扫描 manifest，`start_line/end_line` 必须成对且满足有效行号范围。
 - [x] `knowledge_scan` / `knowledge_extract` / `knowledge_compile` / `knowledge_validate` / `knowledge_publish` 工具。
 - [x] `knowledge_search`：仅检索选中的知识项目，支持 page type/tag/source path 过滤，返回有界 quote、wiki 行号和 raw source citations。
 - [x] `knowledge-engineering` Skill：约束 scan → extract → compile → validate → publish，并要求保存来源证据。
@@ -34,7 +35,7 @@ Knowledge Service（核心逻辑）
 - [x] WebUI 知识库选择器：通过 `/api/sessions/{key}/knowledge-projects` 获取摘要，并在下一条 WebSocket message 中携带 `knowledge_project_id`。
 - [x] Knowledge Workspace 轻量入口：项目摘要、任务状态、Raw/IR/Wiki/Graph 快捷预览，复用现有文件树与 FilePreviewPanel。
 - [x] Graph preview：在现有 Workspace 摘要内提供受限 SVG 关系预览，`graph.json` 仍是持久化真相。
-- [x] `.venv\Scripts\python.exe -m pytest tests/knowledge tests/writing -q`：24 passed。
+- [x] `.venv\Scripts\python.exe -m pytest tests/knowledge tests/writing -q`：25 passed。
 - [x] `webui\bun run build`：TypeScript 与生产构建通过。
 - [x] ingestion adapter contract：扫描 manifest 为文本、Markdown、PDF、HTML、图片记录
   `ingestion_adapter`、`extraction_mode` 与受限读取说明；所有原始字节仍镜像到 `raw/`。
