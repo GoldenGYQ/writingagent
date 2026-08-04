@@ -25,6 +25,7 @@ from nanobot.agent.tools.schema import (
 from nanobot.knowledge.compiler import parse_frontmatter
 from nanobot.knowledge.context import (
     KNOWLEDGE_PROJECT_ID_METADATA,
+    KNOWLEDGE_REQUESTED_METADATA,
     KnowledgeContextProvider,
     knowledge_context_raw,
     set_knowledge_citations,
@@ -218,6 +219,11 @@ class KnowledgeScanTool(Tool, _KnowledgeToolMixin):
                 source_root=project["source_root"],
                 phase="scanned",
             )
+            session = self._session()
+            if session is not None:
+                session.metadata.pop(KNOWLEDGE_REQUESTED_METADATA, None)
+                session.metadata.pop("knowledge_selection_pending", None)
+                self._sessions.save(session)
             return _json(_bounded_scan_result(result))
         except Exception as error:
             return self._error(error)

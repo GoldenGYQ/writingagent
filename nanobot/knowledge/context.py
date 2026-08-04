@@ -194,6 +194,8 @@ class KnowledgeContextProvider:
         context = knowledge_context_raw(session.metadata)
         metadata = request.metadata if isinstance(request.metadata, Mapping) else {}
         requested_source = metadata.get(KNOWLEDGE_REQUESTED_METADATA)
+        if not isinstance(requested_source, str):
+            requested_source = session.metadata.get(KNOWLEDGE_REQUESTED_METADATA)
         requested_source = requested_source.strip() if isinstance(requested_source, str) else None
         selected_project_id = _request_selected_project(request)
         if not context and not requested_source and not selected_project_id:

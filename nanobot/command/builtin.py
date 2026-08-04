@@ -961,6 +961,10 @@ async def cmd_knowledge(ctx: CommandContext) -> OutboundMessage | None:
             "original_command": "/knowledge",
             "original_content": ctx.raw,
         }
+        ctx.session.metadata["knowledge_requested"] = KNOWLEDGE_SOURCE_PENDING
+        ctx.session.metadata["knowledge_selection_pending"] = True
+        if getattr(ctx.loop, "sessions", None) is not None:
+            ctx.loop.sessions.save(ctx.session)
         ctx.msg.content = ctx.raw
         return None
 

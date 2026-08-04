@@ -151,6 +151,8 @@ async def test_scan_tool_defaults_to_command_initialized_project(tmp_path):
         source_root=str(source_root),
         phase="scanning",
     )
+    session.metadata["knowledge_requested"] = KNOWLEDGE_SOURCE_PENDING
+    session.metadata["knowledge_selection_pending"] = True
     sessions.save(session)
     request = RequestContext(
         channel="websocket",
@@ -162,6 +164,8 @@ async def test_scan_tool_defaults_to_command_initialized_project(tmp_path):
         result = json.loads(await KnowledgeScanTool(str(tmp_path), sessions).execute(str(source_root)))
     assert result["project"]["id"] == project_id
     assert result["files"] == 2
+    assert "knowledge_requested" not in sessions.get_or_create(session_key).metadata
+    assert "knowledge_selection_pending" not in sessions.get_or_create(session_key).metadata
     assert len(KnowledgeStore(tmp_path).list_projects()) == 1
 
 
@@ -341,8 +345,10 @@ async def test_knowledge_runtime_context_guides_source_selection(tmp_path):
         chat_id="chat-selection",
         session_key="websocket:chat-selection",
         workspace=tmp_path,
-        metadata={"knowledge_requested": KNOWLEDGE_SOURCE_PENDING},
     )
+    session = sessions.get_or_create(request.session_key)
+    session.metadata["knowledge_requested"] = KNOWLEDGE_SOURCE_PENDING
+    sessions.save(session)
 
     block = await provider(request)
 

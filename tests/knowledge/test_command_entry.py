@@ -78,4 +78,5 @@ async def test_knowledge_command_without_source_enters_runtime_selection_state(t
     assert context.msg.metadata["knowledge_selection_pending"] is True
     assert context.msg.metadata["goal_requested"] is True
     assert len(context.turn_scopes) == 1
+    assert context.session.metadata["knowledge_requested"] == "__select_source__"
     assert not (tmp_path / "wikis").exists()
