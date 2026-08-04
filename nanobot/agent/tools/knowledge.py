@@ -31,6 +31,7 @@ from nanobot.knowledge.context import (
     set_knowledge_citations,
     set_knowledge_context,
 )
+from nanobot.knowledge.models import PAGE_TYPES
 from nanobot.knowledge.service import KnowledgeService
 from nanobot.knowledge.store import KnowledgeNotFoundError, KnowledgeStore, KnowledgeStoreError
 from nanobot.session.manager import SessionManager
@@ -229,9 +230,48 @@ class KnowledgeScanTool(Tool, _KnowledgeToolMixin):
             return self._error(error)
 
 
-_PAGE_SCHEMA = ObjectSchema(additional_properties=True)
+_PAGE_SCHEMA = ObjectSchema(
+    properties={
+        "type": StringSchema(
+            "Page type. Use concept, entity, source, query, comparison, or synthesis.",
+            enum=PAGE_TYPES,
+        ),
+        "title": StringSchema("Human-readable page title.", min_length=1, max_length=240),
+        "slug": StringSchema("Stable page slug; omit only when it can be derived from title.", max_length=240),
+        "body": StringSchema(
+            "Non-empty Markdown正文. Include the extracted explanation, not only a heading.",
+            min_length=1,
+            max_length=20000,
+        ),
+        "tags": ArraySchema(StringSchema("A concise semantic tag."), max_items=30),
+        "related": ArraySchema(StringSchema("Related page title or slug."), max_items=50),
+        "sources": ArraySchema(StringSchema("Source-relative path from knowledge_scan."), max_items=20),
+        "source_path": StringSchema("Primary source-relative path.", max_length=2000),
+        "metadata": ObjectSchema(additional_properties=True),
+    },
+    required=["type", "title", "body"],
+    description="Typed page draft. Every page must contain a substantive non-empty body.",
+    additional_properties=True,
+)
 _RELATION_SCHEMA = ObjectSchema(additional_properties=True)
-_ENTITY_SCHEMA = ObjectSchema(additional_properties=True)
+_ENTITY_SCHEMA = ObjectSchema(
+    properties={
+        "name": StringSchema("Canonical entity name.", min_length=1, max_length=240),
+        "type": StringSchema("Entity page type; normally entity.", max_length=40),
+        "description": StringSchema(
+            "Substantive entity正文. Do not submit an empty description.",
+            min_length=1,
+            max_length=12000,
+        ),
+        "tags": ArraySchema(StringSchema("Semantic tag for this entity."), max_items=30),
+        "related": ArraySchema(StringSchema("Related page title or slug."), max_items=50),
+        "source_path": StringSchema("Source-relative path.", max_length=2000),
+        "metadata": ObjectSchema(additional_properties=True),
+    },
+    required=["name", "description"],
+    description="Structured entity record. Include description, tags, and related pages when known.",
+    additional_properties=True,
+)
 
 
 @tool_parameters(tool_parameters_schema(
@@ -262,7 +302,12 @@ class KnowledgeExtractTool(Tool, _KnowledgeToolMixin):
 
     @property
     def description(self) -> str:
-        return "Save structured Knowledge IR for one source; do not generate wiki Markdown directly."
+        return (
+            "Save structured Knowledge IR for one source; do not generate wiki Markdown directly. "
+            "Every page requires type, title, and substantive body. Every entity requires name "
+            "and substantive description; include semantic tags and related page references. "
+            "Use only source-relative paths returned by knowledge_scan."
+        )
 
     async def execute(
         self,

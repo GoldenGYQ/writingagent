@@ -264,6 +264,16 @@ class KnowledgeService:
                 name=str(item.get("name") or "").strip(),
                 type=str(item.get("type") or "entity").strip() or "entity",
                 description=str(item.get("description") or ""),
+                tags=[
+                    str(value).strip()
+                    for value in (item.get("tags") or [])
+                    if str(value).strip()
+                ],
+                related=[
+                    str(value).strip()
+                    for value in (item.get("related") or [])
+                    if str(value).strip()
+                ],
                 source_path=str(item.get("source_path") or normalized_source),
                 metadata=dict(item.get("metadata") or {}),
             )

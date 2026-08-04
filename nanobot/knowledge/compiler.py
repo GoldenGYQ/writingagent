@@ -22,6 +22,7 @@ from nanobot.knowledge.store import KnowledgeStore
 _WIKILINK_RE = re.compile(r"\[\[([^\]|#]+)(?:#[^\]|]+)?(?:\|[^\]]+)?\]\]")
 _INVALID_SLUG_CHARS = re.compile(r"[\\/:*?\"<>|\x00-\x1f]+")
 _MULTISPACE_RE = re.compile(r"\s+")
+_MIN_SUBSTANTIVE_BODY_CHARS = 80
 
 
 def safe_slug(value: str) -> str:
@@ -50,6 +51,29 @@ def _unique(values: list[str]) -> list[str]:
 def _canonical_slug(value: str, known_slugs: set[str]) -> str:
     slug = safe_slug(value)
     return next((known for known in known_slugs if known.casefold() == slug.casefold()), slug)
+
+
+def _canonical_page_ref(
+    value: str,
+    known_slugs: set[str],
+    title_to_slug: dict[str, str] | None = None,
+) -> str:
+    """Resolve a page reference supplied as either a title or a slug.
+
+    LLM extraction naturally tends to use the human-readable page title in
+    ``related`` and relation endpoints, while the filesystem and graph use a
+    stable slug.  Keeping the title-to-slug mapping at compile/validation time
+    lets the IR accept both forms without weakening missing-target checks.
+    """
+    clean = str(value or "").strip()
+    if title_to_slug:
+        mapped = title_to_slug.get(clean.casefold())
+        if mapped:
+            return mapped
+        mapped = title_to_slug.get(safe_slug(clean).casefold())
+        if mapped:
+            return mapped
+    return _canonical_slug(clean, known_slugs)
 
 
 def _frontmatter_list(value: Any) -> str:
@@ -141,6 +165,24 @@ def parse_frontmatter(content: str) -> tuple[dict[str, Any], str]:
     return metadata, parts[2].lstrip("\r\n")
 
 
+def _substantive_body(body: str) -> str:
+    """Return body text used by the publish quality gate.
+
+    Compiled pages always receive a title heading, so counting the heading
+    would allow an otherwise empty page to pass validation.  Markdown syntax
+    is intentionally only lightly normalized here: the gate is checking that
+    the extraction contains enough human-readable substance, not validating
+    Markdown itself.
+    """
+    lines = []
+    for line in body.splitlines():
+        stripped = line.strip()
+        if not stripped or stripped.startswith("#"):
+            continue
+        lines.append(stripped)
+    return re.sub(r"\s+", " ", " ".join(lines)).strip()
+
+
 def _merge_existing(store: KnowledgeStore, project_id: str, page: KnowledgePage) -> KnowledgePage:
     """Merge a new extraction into an existing page instead of overwriting it."""
     path = store.page_path(project_id, page.type, page.slug)
@@ -176,11 +218,19 @@ def _page_from_entity(entity: dict[str, Any], source_path: str) -> KnowledgePage
     name = str(entity.get("name") or "").strip()
     if not name:
         return None
+    tags = [str(value).strip() for value in (entity.get("tags") or []) if str(value).strip()]
+    related = [
+        str(value).strip()
+        for value in (entity.get("related") or [])
+        if str(value).strip()
+    ]
     return KnowledgePage(
         type=str(entity.get("type") or "entity"),
         title=name,
         slug=safe_slug(name),
         body=str(entity.get("description") or ""),
+        tags=tags,
+        related=related,
         source_path=source_path,
         sources=[source_path] if source_path else [],
     )
@@ -229,6 +279,8 @@ def _extraction_conflicts(store: KnowledgeStore, project_id: str) -> list[dict[s
                 title=entity.name,
                 slug=safe_slug(entity.name),
                 body=entity.description,
+                tags=list(entity.tags),
+                related=list(entity.related),
                 source_path=entity.source_path or ir.source_path,
             )
             for entity in ir.entities
@@ -284,6 +336,27 @@ def compile_project(store: KnowledgeStore, project_id: str) -> dict[str, Any]:
         relations.extend(ir.relations)
 
     compiled: list[KnowledgePage] = list(page_map.values())
+    # Materialize relation targets into page frontmatter as well as graph.json.
+    # This keeps the page useful when opened without rendering the graph and
+    # prevents valid entity relationships from disappearing as empty metadata.
+    pages_by_slug = {page.slug: page for page in compiled}
+    known_slugs = set(pages_by_slug)
+    title_to_slug = {
+        key: page.slug
+        for page in compiled
+        for key in (page.title.casefold(), safe_slug(page.title).casefold(), page.slug.casefold())
+    }
+    for relation in relations:
+        source_slug = _canonical_page_ref(relation.source, known_slugs, title_to_slug)
+        target_slug = _canonical_page_ref(relation.target, known_slugs, title_to_slug)
+        source_page = pages_by_slug.get(source_slug)
+        if source_page is not None and target_slug in known_slugs:
+            source_page.related = _unique([*source_page.related, target_slug])
+    for page in compiled:
+        page.related = _unique([
+            _canonical_page_ref(target, known_slugs, title_to_slug)
+            for target in page.related
+        ])
     for page in compiled:
         store.write_page(project_id, page, render_page(page))
 
@@ -330,20 +403,25 @@ def compile_project(store: KnowledgeStore, project_id: str) -> dict[str, Any]:
         for page in compiled
     ]
     known_slugs = {page.slug for page in compiled}
+    title_to_slug = {
+        key: page.slug
+        for page in compiled
+        for key in (page.title.casefold(), safe_slug(page.title).casefold(), page.slug.casefold())
+    }
     graph_edges: list[dict[str, Any]] = []
     for page in compiled:
         for target in page.related:
             graph_edges.append({
                 "source": page.slug,
-                "target": _canonical_slug(target, known_slugs),
+                "target": _canonical_page_ref(target, known_slugs, title_to_slug),
                 "relation": "related",
             })
     for relation in relations:
         if relation.source and relation.target:
             graph_edges.append({
                 **relation.to_dict(),
-                "source": _canonical_slug(relation.source, known_slugs),
-                "target": _canonical_slug(relation.target, known_slugs),
+                "source": _canonical_page_ref(relation.source, known_slugs, title_to_slug),
+                "target": _canonical_page_ref(relation.target, known_slugs, title_to_slug),
             })
     graph = {"version": 1, "nodes": graph_nodes, "edges": graph_edges}
     graph_path = store.project_path(project_id) / "knowledge" / "graph" / "graph.json"
@@ -405,6 +483,7 @@ def validate_project(store: KnowledgeStore, project_id: str) -> dict[str, Any]:
             if path.name not in {"index.md", "log.md"}
         ]
     known_slugs: set[str] = set()
+    title_to_slug: dict[str, str] = {}
     source_paths = {source.relative_path for source in project.sources}
     issues.extend(_extraction_conflicts(store, project_id))
     for ir in store.list_ir(project_id):
@@ -435,11 +514,14 @@ def validate_project(store: KnowledgeStore, project_id: str) -> dict[str, Any]:
                     "message": "relation evidence line range is invalid",
                 })
     for path, content in pages:
-        metadata, _ = parse_frontmatter(content)
+        metadata, body = parse_frontmatter(content)
         page_type = str(metadata.get("type") or "")
         title = str(metadata.get("title") or "")
         slug = path.stem
         known_slugs.add(slug)
+        title_to_slug[title.casefold()] = slug
+        title_to_slug[safe_slug(title).casefold()] = slug
+        title_to_slug[slug.casefold()] = slug
         if page_type not in PAGE_TYPES:
             issues.append({"kind": "frontmatter", "path": str(path), "message": "invalid or missing type"})
         if not title:
@@ -453,6 +535,24 @@ def validate_project(store: KnowledgeStore, project_id: str) -> dict[str, Any]:
                     issues.append({"kind": "frontmatter", "path": str(path), "message": f"missing {key}"})
         if page_type in {"entity", "concept", "source"} and not metadata.get("sources"):
             issues.append({"kind": "evidence", "path": str(path), "message": "page has no source evidence"})
+        if page_type in {"entity", "concept", "source"}:
+            body_text = _substantive_body(body)
+            if len(body_text) < _MIN_SUBSTANTIVE_BODY_CHARS:
+                issues.append({
+                    "kind": "quality",
+                    "path": str(path),
+                    "message": (
+                        "page body is empty or too short after removing the title heading "
+                        f"(minimum {_MIN_SUBSTANTIVE_BODY_CHARS} characters)"
+                    ),
+                })
+            tags = metadata.get("tags")
+            if not isinstance(tags, list) or not any(str(tag).strip() for tag in tags):
+                issues.append({
+                    "kind": "quality",
+                    "path": str(path),
+                    "message": "page has no semantic tags",
+                })
         if isinstance(metadata.get("sources"), list):
             for source in metadata["sources"]:
                 if source_paths and source not in source_paths:
@@ -463,14 +563,14 @@ def validate_project(store: KnowledgeStore, project_id: str) -> dict[str, Any]:
                     })
     for path, content in pages:
         for target in _WIKILINK_RE.findall(content):
-            target_slug = _canonical_slug(target.strip(), known_slugs)
+            target_slug = _canonical_page_ref(target.strip(), known_slugs, title_to_slug)
             if target_slug not in known_slugs:
                 issues.append({"kind": "wikilink", "path": str(path), "message": f"missing target [[{target}]]"})
     for path, content in pages:
         metadata, _ = parse_frontmatter(content)
         related = metadata.get("related") if isinstance(metadata.get("related"), list) else []
         for target in related:
-            target_slug = _canonical_slug(str(target), known_slugs)
+            target_slug = _canonical_page_ref(str(target), known_slugs, title_to_slug)
             if target_slug not in known_slugs:
                 issues.append({
                     "kind": "wikilink",
@@ -512,6 +612,7 @@ def validate_project(store: KnowledgeStore, project_id: str) -> dict[str, Any]:
         "passed": not issues,
         "issue_count": len(issues),
         "checked_pages": len(pages),
+        "quality_issue_count": sum(1 for issue in issues if issue.get("kind") == "quality"),
     }
     project.updated_at = datetime.now(timezone.utc).isoformat()
     store.save_project(project)
@@ -521,4 +622,5 @@ def validate_project(store: KnowledgeStore, project_id: str) -> dict[str, Any]:
         "checked_pages": len(pages),
         "issues": issues[:200],
         "issue_count": len(issues),
+        "quality_issue_count": sum(1 for issue in issues if issue.get("kind") == "quality"),
     }

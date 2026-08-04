@@ -157,6 +157,8 @@ class KnowledgeEntity:
     name: str
     type: str = "entity"
     description: str = ""
+    tags: list[str] = field(default_factory=list)
+    related: list[str] = field(default_factory=list)
     source_path: str = ""
     metadata: dict[str, Any] = field(default_factory=dict)
 
@@ -207,6 +209,8 @@ class KnowledgeIR:
                     name=_text(item.get("name")),
                     type=_text(item.get("type"), "entity"),
                     description=_text(item.get("description")),
+                    tags=[item for item in _list(item.get("tags")) if isinstance(item, str)],
+                    related=[item for item in _list(item.get("related")) if isinstance(item, str)],
                     source_path=_text(item.get("source_path")),
                     metadata=dict(item.get("metadata") or {}),
                 )

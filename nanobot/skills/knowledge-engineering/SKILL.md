@@ -35,6 +35,45 @@ calling `knowledge_scan`. Keep tool calls observable in the timeline.
 4. Call `knowledge_validate` and resolve missing evidence or wikilinks.
 5. Call `knowledge_publish` only after validation passes.
 
+### Extraction quality contract
+
+`knowledge_extract` stores typed IR; it is not a free-form Markdown dump. Each
+page draft must contain a substantive `body`, and each entity must contain a
+substantive `description`. For `entity`, `concept`, and `source` pages, always
+provide semantic `tags` as well as `sources`. Include `related` page titles or
+slugs when the source establishes a relationship. A minimal valid shape is:
+
+```json
+{
+  "pages": [{
+    "type": "concept",
+    "title": "Agent Runtime",
+    "slug": "agent-runtime",
+    "body": "A multi-paragraph explanation grounded in the source, including its boundary, responsibilities, and limitations.",
+    "tags": ["runtime", "agent"],
+    "related": ["LangGraph"],
+    "sources": ["doc/runtime.md"]
+  }],
+  "entities": [{
+    "name": "LangGraph",
+    "type": "entity",
+    "description": "A graph-based orchestration framework that models agent execution as durable state transitions and exposes explicit edges between steps.",
+    "tags": ["framework", "orchestration"],
+    "related": ["Agent Runtime"],
+    "source_path": "doc/runtime.md"
+  }]
+}
+```
+
+Never submit an empty body, a title-only body, or an entity with only a name.
+`knowledge_validate` is a publish quality gate: it checks substantive body
+length, semantic tags, source evidence, relation targets, and graph evidence.
+If it reports `quality` issues, re-extract the affected source with richer
+content, then run compile and validate again; do not patch generated wiki
+Markdown directly. Relation edges are also materialized into page `related`
+metadata by the compiler, so an explicit `related` list is useful but not the
+only way to preserve relationships.
+
 ## Evidence and retrieval rules
 
 - Preserve the source-relative path in every page's `sources` field and in

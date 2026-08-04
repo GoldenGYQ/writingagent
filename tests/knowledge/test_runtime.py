@@ -67,13 +67,17 @@ def test_scan_extract_compile_validate_publish_reference_shape(tmp_path):
             "type": "concept",
             "title": "Agent Runtime",
             "slug": "agent-runtime",
-            "body": "The runtime coordinates tools and provider turns.",
-            "tags": ["runtime"],
-            "related": ["langgraph"],
+            "body": (
+                "The runtime coordinates tools and provider turns through a durable execution "
+                "boundary. It keeps the active task state observable while the model performs "
+                "multi-turn tool calls and records source-linked outcomes."
+            ),
+            "tags": ["runtime", "agent"],
+            "related": ["LangGraph"],
         }],
         relations=[{
             "source": "agent-runtime",
-            "target": "langgraph",
+            "target": "LangGraph",
             "relation": "implements",
             "evidence": "Both describe orchestration boundaries.",
         }],
@@ -84,7 +88,13 @@ def test_scan_extract_compile_validate_publish_reference_shape(tmp_path):
         entities=[{
             "name": "LangGraph",
             "type": "entity",
-            "description": "A graph-based orchestration framework.",
+            "description": (
+                "LangGraph is a graph-based orchestration framework for modeling agent work as "
+                "durable state transitions. It makes execution edges explicit, which supports "
+                "inspection, retries, and coordination across long-running workflows."
+            ),
+            "tags": ["framework", "orchestration"],
+            "related": ["agent-runtime"],
         }],
     )
 
@@ -216,7 +226,12 @@ def test_source_page_keeps_reference_metadata_shape(tmp_path):
         "type": "source",
         "title": "Agent Runtime source",
         "slug": "agent-runtime-source",
-        "body": "A source-linked summary.",
+        "body": (
+            "This source page records the provenance and scope of the runtime material. It "
+            "summarizes the document's contribution, identifies the evidence boundary, and "
+            "points readers back to the raw source for verification."
+        ),
+        "tags": ["source", "provenance"],
         "metadata": {
             "authors": ["Nanobot Team"],
             "year": 2026,
@@ -272,6 +287,32 @@ def test_validate_rejects_invalid_relation_evidence_anchor(tmp_path):
     assert validation["passed"] is False
     assert any(
         issue["kind"] == "evidence" and "line range is invalid" in issue["message"]
+        for issue in validation["issues"]
+    )
+
+
+def test_validate_rejects_empty_or_untagged_knowledge_pages(tmp_path):
+    source_root = _source_tree(tmp_path)
+    service = KnowledgeService(KnowledgeStore(tmp_path))
+    project_id = service.scan(str(source_root))["project"]["id"]
+    service.extract(project_id, "runtime.md", pages=[{
+        "type": "concept",
+        "title": "Empty concept",
+        "slug": "empty-concept",
+        "body": "",
+    }])
+    service.compile(project_id)
+
+    validation = service.validate(project_id)
+
+    assert validation["passed"] is False
+    assert validation["quality_issue_count"] >= 2
+    assert any(
+        issue["kind"] == "quality" and "body" in issue["message"]
+        for issue in validation["issues"]
+    )
+    assert any(
+        issue["kind"] == "quality" and "tags" in issue["message"]
         for issue in validation["issues"]
     )
 

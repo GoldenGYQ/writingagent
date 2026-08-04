@@ -94,3 +94,11 @@ Writing Agent 集成已完成后端第一步：`knowledge_search` 会返回并�
 - `.venv\Scripts\python.exe -m pytest tests/knowledge tests/writing -q`：29 passed；Knowledge/Writing 相关 Ruff 检查通过。
 - WebUI 的 i18n、文件预览、多行引用、Knowledge Workspace 与 ThreadShell 定向测试：77 passed；本次复跑通过，所有 locale 的资源键结构已对齐。
 - 全量 WebUI 在 `--testTimeout=10000` 下为 903/904；剩余失败是未修改的 `ThreadViewport` 动画时序断言（期望 2400，实际值接近目标），不属于 Knowledge/Workspace 变更。
+
+## 2026-08-05 真实模型复核
+
+- 使用本地 WebUI 的真实 DeepSeek 通道在 `D:\Users\gyq16\Desktop\PRJ\NANOTEST3` 执行 `/knowledge sources`，未使用 mock 或离线填充。
+- 首次运行暴露了生成质量缺口：实体页的 `description` 过短、`tags/related` 为空；新增 IR schema 约束与 `validate_project()` 质量门禁后，真实运行的 15 个实体与 10 个概念页均通过正文长度、tags、sources 检查。
+- 真实任务最终完成 14 个 IR、30 个编译页面（另有 overview 投影）；抽取阶段记录 86 条关系，清理无目标条目后最终图快照为 79 条边。第一次校验的 172 个 wikilink 错误来自 related 使用标题而非 slug，已通过编译器的 title-to-slug 兼容映射固化，并验证 `passed=true`、`quality_issue_count=0`、`issue_count=0`、`published=true`。
+- 当前源码复核结果：目标项目 31 个可读 Markdown 页面中，`entity/concept/source` 页面无短正文、无空 tags、无缺失 sources；直接调用当前 `validate_project()` 返回 0 issues。
+- 与 `NANOTEST2` 参考库的差异是规模而非结构：参考库 185 页，本轮 30 个抽取页；本轮已对齐 typed frontmatter、source evidence、related/graph、validation/publish 闭环，后续可通过更细粒度的 schema/领域切分提升页面数量与深度。
