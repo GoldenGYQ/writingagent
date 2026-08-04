@@ -8,7 +8,7 @@ import re
 from collections import defaultdict
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 from nanobot.knowledge.models import (
     PAGE_TYPES,
@@ -101,16 +101,19 @@ def parse_frontmatter(content: str) -> tuple[dict[str, Any], str]:
 
         loaded = yaml.safe_load(parts[1])
         if isinstance(loaded, dict):
-            metadata: dict[str, Any] = {}
-            for key, value in loaded.items():
+            loaded_mapping = cast(dict[Any, Any], loaded)
+            parsed_metadata: dict[str, Any] = {}
+            for key, value in loaded_mapping.items():
                 normalized_key = str(key)
                 if isinstance(value, list):
-                    metadata[normalized_key] = [str(item) for item in value if item is not None]
+                    parsed_metadata[normalized_key] = [
+                        str(item) for item in value if item is not None
+                    ]
                 elif value is None:
-                    metadata[normalized_key] = ""
+                    parsed_metadata[normalized_key] = ""
                 else:
-                    metadata[normalized_key] = str(value)
-            return metadata, parts[2].lstrip("\r\n")
+                    parsed_metadata[normalized_key] = str(value)
+            return parsed_metadata, parts[2].lstrip("\r\n")
     except Exception:
         # Keep the legacy parser as a best-effort fallback for incomplete
         # frontmatter; validation will still report malformed fields.

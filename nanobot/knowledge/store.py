@@ -11,6 +11,7 @@ from pathlib import Path
 from tempfile import NamedTemporaryFile
 from typing import Any, cast
 
+from nanobot.knowledge.ingest import adapter_for_path
 from nanobot.knowledge.models import (
     KnowledgeIR,
     KnowledgePage,
@@ -225,13 +226,9 @@ class KnowledgeStore:
                 except OSError:
                     continue
                 relative = path.relative_to(raw_root).as_posix()
-                suffix = path.suffix.lower()
-                kind = (
-                    "markdown" if suffix in {".md", ".markdown"}
-                    else "pdf" if suffix == ".pdf"
-                    else "document" if suffix in {".docx", ".xlsx", ".pptx"}
-                    else "text"
-                )
+                adapter = adapter_for_path(path)
+                if adapter is None:
+                    continue
                 sources.append(KnowledgeSource(
                     path=str(path),
                     relative_path=f"raw/{relative}",
@@ -239,8 +236,9 @@ class KnowledgeStore:
                     size=stat.st_size,
                     modified_at=datetime.fromtimestamp(stat.st_mtime, timezone.utc).isoformat(),
                     sha256=hashlib.sha256(raw).hexdigest(),
-                    kind=kind,
+                    kind=adapter.kind,
                     status="published",
+                    metadata=adapter.metadata(),
                 ))
 
         page_paths = [

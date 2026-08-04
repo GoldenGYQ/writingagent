@@ -8,6 +8,7 @@ from pathlib import Path
 from typing import Any, Mapping
 
 from nanobot.knowledge.compiler import compile_project, validate_project
+from nanobot.knowledge.ingest import adapter_for_path, supported_source_suffixes
 from nanobot.knowledge.models import (
     KnowledgeEntity,
     KnowledgeIR,
@@ -21,11 +22,7 @@ from nanobot.knowledge.models import (
 )
 from nanobot.knowledge.store import KnowledgeNotFoundError, KnowledgeStore, KnowledgeStoreError
 
-_SOURCE_EXTENSIONS = frozenset({
-    ".md", ".markdown", ".txt", ".rst", ".py", ".js", ".ts", ".tsx", ".jsx",
-    ".json", ".yaml", ".yml", ".toml", ".ini", ".cfg", ".tex", ".csv",
-    ".pdf",
-})
+_SOURCE_EXTENSIONS = supported_source_suffixes()
 _SKIP_DIRS = frozenset({
     ".git", ".hg", ".svn", ".nanobot", ".venv", "venv", "node_modules",
     "__pycache__", "dist", "build", "tool-results", "wikis",
@@ -132,7 +129,10 @@ class KnowledgeService:
         for path in sorted(source_root.rglob("*")):
             if len(sources) >= max(1, min(max_files, 10_000)):
                 break
-            if not path.is_file() or path.suffix.lower() not in _SOURCE_EXTENSIONS:
+            if not path.is_file():
+                continue
+            adapter = adapter_for_path(path)
+            if adapter is None or path.suffix.lower() not in _SOURCE_EXTENSIONS:
                 continue
             if any(part in _SKIP_DIRS for part in path.relative_to(source_root).parts):
                 continue
@@ -150,11 +150,8 @@ class KnowledgeService:
                     size=stat.st_size,
                     modified_at=datetime.fromtimestamp(stat.st_mtime, timezone.utc).isoformat(),
                     sha256=hashlib.sha256(raw).hexdigest(),
-                    kind=(
-                        "markdown" if path.suffix.lower() in {".md", ".markdown"}
-                        else "pdf" if path.suffix.lower() == ".pdf"
-                        else "text"
-                    ),
+                    kind=adapter.kind,
+                    metadata=adapter.metadata(),
                 )
             )
             self.store.write_raw(project.id, sources[-1].raw_relative_path, raw)

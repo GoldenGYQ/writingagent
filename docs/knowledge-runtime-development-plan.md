@@ -36,6 +36,8 @@ Knowledge Service（核心逻辑）
 - [x] Graph preview：在现有 Workspace 摘要内提供受限 SVG 关系预览，`graph.json` 仍是持久化真相。
 - [x] `.venv\Scripts\python.exe -m pytest tests/knowledge -q`：6 passed。
 - [x] `webui\bun run build`：TypeScript 与生产构建通过。
+- [x] ingestion adapter contract：扫描 manifest 为文本、Markdown、PDF、HTML、图片记录
+  `ingestion_adapter`、`extraction_mode` 与受限读取说明；所有原始字节仍镜像到 `raw/`。
 
 ## 参考目录映射
 
@@ -74,7 +76,8 @@ Writing Agent 集成已完成后端第一步：`knowledge_search` 会返回并�
 - [x] 后端将引用片段映射为统一的 `path + start_line + end_line + quote`，并由 `knowledge_search` 返回可供写作 Agent 复用的 source citations。
 - [x] 将最近一次选中知识库检索的 citations 接入 `writing_changeset.sources`，并按 Knowledge project id 防止跨库污染。
 - [ ] 完成浏览器端多行引用的手动验收，并确认引用卡片在下一条消息中稳定回传。
-- [ ] 增加 PDF/网页/OCR 的可插拔 ingestion adapter；原始内容仍先进入 raw，再进入 IR。
+- [ ] 完成 PDF/网页/OCR 的实际解析适配器（当前已完成 manifest 契约与 raw 镜像，抽取仍由
+  Agent 按契约调用 bounded reader 后提交 IR）。
 - [ ] 评估向量检索和 GraphRAG；在证据链、权限边界和可观察性稳定前不全量注入 wiki。
 - [ ] 后续再评估独立 Knowledge Agent、多 Agent 协作和图谱可视化。
 

@@ -23,6 +23,10 @@ in the timeline.
    For scanned PDFs, use `read_file` with its bounded `pages` argument before
    extracting; keep the PDF itself as the raw source and do not paste the
    whole document into the runtime context.
+   The scan manifest records an `ingestion_adapter` and bounded
+   `extraction_mode` for each source. Use that contract to choose line-,
+   page-, text-, or vision/OCR-bounded reads; raw bytes remain evidence, not
+   an instruction to inject the whole source into context.
 3. Call `knowledge_compile` only after the selected extraction work is saved.
    Compilation writes merged Markdown views under `wiki/` (legacy projects may
    use `knowledge/wiki/`); it does
