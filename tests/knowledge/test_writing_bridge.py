@@ -15,6 +15,7 @@ from nanobot.security.workspace_access import (
     reset_workspace_scope,
 )
 from nanobot.session.manager import SessionManager
+from nanobot.writing.context import WritingContextProvider
 from nanobot.writing.document import DocumentService
 from nanobot.writing.store import WritingStore
 
@@ -73,6 +74,10 @@ async def test_knowledge_search_citations_flow_into_writing_changeset(tmp_path):
                 "chapter_id": chapter.id,
             }
             sessions.save(session)
+            context_block = await WritingContextProvider(WritingStore(tmp_path), sessions)(request)
+            assert context_block is not None
+            assert f"Selected Knowledge Project: {project_id}" in context_block.content
+            assert "Recent bounded Knowledge citations available to the next ChangeSet: 1" in context_block.content
             proposal_result = await changeset_tool.execute(
                 action="propose",
                 project_id=writing_project.id,
