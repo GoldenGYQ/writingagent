@@ -86,12 +86,35 @@ async def test_knowledge_search_citations_flow_into_writing_changeset(tmp_path):
                 proposed_content="A durable context boundary is introduced.\n",
                 reason="Ground the introduction in the selected knowledge source.",
             )
+            first_payload = json.loads(str(proposal_result))
+            assert first_payload["knowledge_citations_used"] == 1
+
+            other_project_id = knowledge.scan("raw/sources", title="Other Knowledge")["project"]["id"]
+            with request_context(
+                RequestContext(
+                    channel="websocket",
+                    chat_id="bridge",
+                    session_key="websocket:bridge",
+                    workspace=tmp_path,
+                    metadata={"knowledge_project_id": other_project_id},
+                )
+            ):
+                second_result = await changeset_tool.execute(
+                    action="propose",
+                    project_id=writing_project.id,
+                    document_id=document.id,
+                    chapter_id=chapter.id,
+                    proposed_content="A second draft with no cross-project evidence.\n",
+                    reason="Verify Knowledge project isolation.",
+                )
     finally:
         reset_workspace_scope(token)
 
     payload = json.loads(str(proposal_result))
-    assert payload["knowledge_citations_used"] == 1
     saved = payload["changeset"]["sources"]
     assert saved[0]["project_id"] == project_id
     assert saved[0]["path"].endswith("raw/sources/runtime.md")
-    assert WritingStore(tmp_path).read_chapter(document, chapter.id) == "A durable context boundary is introduced.\n"
+    second_payload = json.loads(str(second_result))
+    assert second_payload["knowledge_citations_used"] == 0
+    assert second_payload["changeset"]["sources"] == []
+    assert WritingStore(tmp_path).read_chapter(document, chapter.id) == "A second draft with no cross-project evidence.\n"
