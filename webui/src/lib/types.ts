@@ -1475,7 +1475,16 @@ export interface KnowledgeProjectsPayload {
 }
 
 export interface KnowledgeProjectDetailPayload {
-  project: KnowledgeProjectSummary;
+  project: KnowledgeProjectSummary & {
+    task?: {
+      id: string;
+      status: string;
+      phase: string;
+      pending_sources: number;
+      completed_sources: number;
+      updated_at?: string;
+    } | null;
+  };
   counts: {
     sources: number;
     ir_files: number;
@@ -1494,6 +1503,10 @@ export interface KnowledgeProjectDetailPayload {
   ir_files?: string[];
   pages: Array<{ slug: string; path: string; type: string }>;
   pages_truncated?: boolean;
+  graph?: {
+    nodes: Array<{ id: string; type?: string; title?: string }>;
+    edges: Array<{ source: string; target: string; relation?: string; evidence?: string }>;
+  };
 }
 
 export type Outbound =

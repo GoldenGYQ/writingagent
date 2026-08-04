@@ -10,6 +10,7 @@ validation/rebuilds deterministic.
 from __future__ import annotations
 
 import json
+from pathlib import Path
 from typing import Any
 
 from nanobot.agent.tools.base import Tool, ToolResult, tool_parameters
@@ -21,6 +22,7 @@ from nanobot.agent.tools.schema import (
     StringSchema,
     tool_parameters_schema,
 )
+from nanobot.knowledge.compiler import parse_frontmatter
 from nanobot.knowledge.context import (
     KNOWLEDGE_PROJECT_ID_METADATA,
     KnowledgeContextProvider,
@@ -57,6 +59,42 @@ def _bounded_scan_result(result: dict[str, Any]) -> dict[str, Any]:
     result["documents"] = documents[:200]
     result["documents_truncated"] = len(documents) > len(result["documents"])
     return result
+
+
+def _source_citation(
+    store: KnowledgeStore,
+    project: Any,
+    source_path: str,
+    needle: str,
+) -> dict[str, Any] | None:
+    """Return a line-anchored citation from the mirrored raw source when possible."""
+    source = next(
+        (item for item in project.sources if item.relative_path == source_path),
+        None,
+    )
+    if source is None:
+        return None
+    try:
+        if source.raw_relative_path:
+            path = store.raw_path(project.id, source.raw_relative_path)
+        else:
+            path = Path(project.source_root) / source.relative_path
+        lines = path.read_text(encoding="utf-8").splitlines()
+    except (OSError, UnicodeDecodeError):
+        return None
+    hit = next((index for index, line in enumerate(lines) if needle in line.casefold()), None)
+    if hit is None:
+        return None
+    start = max(0, hit - 2)
+    end = min(len(lines), hit + 5)
+    quote = "\n".join(lines[start:end])[:800]
+    return {
+        "path": path.relative_to(store.workspace).as_posix(),
+        "start_line": start + 1,
+        "end_line": end,
+        "quote": quote,
+        "source_path": source.relative_path,
+    }
 
 
 def _store(default_workspace: str) -> KnowledgeStore:
@@ -153,7 +191,9 @@ class KnowledgeScanTool(Tool, _KnowledgeToolMixin):
                 max_files=max_files or 2000,
             )
             project = result["project"]
+            task = result.get("task") if isinstance(result.get("task"), dict) else {}
             self._set_context(
+                task_id=task.get("id") if isinstance(task.get("id"), str) else None,
                 project_id=project["id"],
                 source_root=project["source_root"],
                 phase="scanned",
@@ -353,6 +393,9 @@ class KnowledgePublishTool(Tool, _KnowledgeToolMixin):
     query=StringSchema("Case-insensitive full-text query.", min_length=1, max_length=400),
     project_id=StringSchema("Knowledge project id; defaults to selected/active project.", max_length=128, nullable=True),
     limit=IntegerSchema(description="Maximum matches.", minimum=1, maximum=50, nullable=True),
+    page_type=StringSchema("Optional page type filter, for example concept or entity.", max_length=40, nullable=True),
+    tag=StringSchema("Optional tag filter.", max_length=100, nullable=True),
+    source_path=StringSchema("Optional source relative path filter.", max_length=2000, nullable=True),
     required=["query"],
 ))
 class KnowledgeSearchTool(Tool, _KnowledgeToolMixin):
@@ -385,6 +428,9 @@ class KnowledgeSearchTool(Tool, _KnowledgeToolMixin):
         query: str,
         project_id: str | None = None,
         limit: int | None = None,
+        page_type: str | None = None,
+        tag: str | None = None,
+        source_path: str | None = None,
         **_: Any,
     ) -> str:
         project_id = project_id or self._context().get("selected_project_id") or self._context().get("project_id")
@@ -399,27 +445,73 @@ class KnowledgeSearchTool(Tool, _KnowledgeToolMixin):
             store = _store(self._workspace)
             project = store.get_project(project_id)
             needle = query.strip().casefold()
+            type_filter = page_type.strip().casefold() if page_type else None
+            tag_filter = tag.strip().casefold() if tag else None
+            source_filter = source_path.strip() if source_path else None
             matches: list[dict[str, Any]] = []
             for path in store.wiki_root(project_id).rglob("*.md"):
                 if path.name in {"index.md", "overview.md", "log.md"}:
                     continue
                 content = path.read_text(encoding="utf-8")
+                metadata, _ = parse_frontmatter(content)
+                metadata_type = str(metadata.get("type") or "").casefold()
+                metadata_tags = {
+                    str(value).casefold()
+                    for value in (metadata.get("tags") if isinstance(metadata.get("tags"), list) else [])
+                }
+                metadata_sources = [
+                    str(value)
+                    for value in (metadata.get("sources") if isinstance(metadata.get("sources"), list) else [])
+                ]
+                if type_filter and metadata_type != type_filter:
+                    continue
+                if tag_filter and tag_filter not in metadata_tags:
+                    continue
+                if source_filter and source_filter not in metadata_sources:
+                    continue
                 if needle not in content.casefold():
                     continue
                 lines = content.splitlines()
                 hit = next((index for index, line in enumerate(lines) if needle in line.casefold()), 0)
                 start = max(0, hit - 2)
                 end = min(len(lines), hit + 5)
+                snippet = "\n".join(lines[start:end])[:800]
+                page_path = path.relative_to(store.workspace).as_posix()
+                source_citations = []
+                for source in metadata_sources[:3]:
+                    citation = _source_citation(store, project, source, needle)
+                    if citation is not None:
+                        source_citations.append(citation)
                 matches.append({
                     "slug": path.stem,
                     "path": path.relative_to(store.project_path(project_id)).as_posix(),
-                    "snippet": "\n".join(lines[start:end])[:800],
+                    "snippet": snippet,
+                    "quote": snippet,
                     "start_line": start + 1,
                     "end_line": end,
                     "project_id": project.id,
+                    "page_type": metadata_type,
+                    "tags": sorted(metadata_tags),
+                    "sources": metadata_sources,
+                    "citation": {
+                        "path": page_path,
+                        "start_line": start + 1,
+                        "end_line": end,
+                        "quote": snippet,
+                    },
+                    "source_citations": source_citations,
                 })
                 if len(matches) >= min(limit or 10, 20):
                     break
-            return _json({"project_id": project_id, "query": query, "matches": matches})
+            return _json({
+                "project_id": project_id,
+                "query": query,
+                "filters": {
+                    "page_type": page_type,
+                    "tag": tag,
+                    "source_path": source_path,
+                },
+                "matches": matches,
+            })
         except Exception as error:
             return self._error(error)

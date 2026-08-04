@@ -22,15 +22,16 @@ Knowledge Service（核心逻辑）
 
 - [x] `nanobot/knowledge/models.py`：Source、Page、Relation、Entity、IR、Project。
 - [x] `store.py`：workspace-scoped、原子写入、路径校验、项目/IR/raw/review/wiki 持久化。
-- [x] `service.py`：扫描 source、镜像 raw、保存 IR、编译、校验、Review、发布。
+- [x] `service.py`：扫描 source、镜像 raw、保存 IR、编译、校验、Review、发布，并持久化可恢复的 `knowledge/task.json`。
 - [x] `compiler.py`：frontmatter 页面、`index.md`、`overview.md`、`log.md`、`graph.json`；重复编译合并正文且不重复写 ingest 日志。
 - [x] `knowledge_scan` / `knowledge_extract` / `knowledge_compile` / `knowledge_validate` / `knowledge_publish` 工具。
-- [x] `knowledge_search`：仅检索选中的知识项目，返回有界 snippet 和 wiki 路径/行号。
+- [x] `knowledge_search`：仅检索选中的知识项目，支持 page type/tag/source path 过滤，返回有界 quote、wiki 行号和 raw source citations。
 - [x] `knowledge-engineering` Skill：约束 scan → extract → compile → validate → publish，并要求保存来源证据。
 - [x] `/knowledge <source-directory>`：只声明任务边界，实际执行仍由 Agent Runtime 调用工具。
 - [x] Runtime Context 条件注入：仅在知识请求、已有知识上下文或 WebUI 显式选择项目时注入。
 - [x] WebUI 知识库选择器：通过 `/api/sessions/{key}/knowledge-projects` 获取摘要，并在下一条 WebSocket message 中携带 `knowledge_project_id`。
-- [x] Knowledge Workspace 轻量入口：项目摘要、Raw/IR/Wiki/Graph 快捷预览，复用现有文件树与 FilePreviewPanel。
+- [x] Knowledge Workspace 轻量入口：项目摘要、任务状态、Raw/IR/Wiki/Graph 快捷预览，复用现有文件树与 FilePreviewPanel。
+- [x] Graph preview：在现有 Workspace 摘要内提供受限 SVG 关系预览，`graph.json` 仍是持久化真相。
 - [x] `.venv\Scripts\python.exe -m pytest tests/knowledge -q`：5 passed。
 - [x] `webui\bun run build`：TypeScript 与生产构建通过。
 
@@ -61,11 +62,11 @@ Knowledge Service（核心逻辑）
 
 本轮完成了 MVP 的 durable pipeline：`scan → extract(IR) → compile(wiki + graph) → validate/review → publish`。
 `knowledge_validate` 会持久化 Review 结果；验证失败时不会发布。WebUI 仅增加知识项目摘要与快捷入口，不改变 Conversation/Agent Timeline 的既有布局。
+`knowledge/task.json` 保存任务阶段、状态、待处理/已处理来源，Runtime Context 只在知识任务或显式选择项目时读取它。
 
 ## 下一步
 
-- [ ] 将 Knowledge Workspace 从当前轻量摘要扩展为可折叠的 Raw / IR / Wiki / Graph 分组视图（仍复用现有 Workspace 与 FilePreviewPanel）。
-- [ ] 为 `knowledge_search` 增加按 page type、tag、source path 的过滤。
+- [ ] 将 Knowledge Workspace 从当前轻量摘要扩展为可折叠的 Raw / IR / Wiki / Graph 分组视图（当前已有快捷入口和图谱预览，仍复用现有 Workspace 与 FilePreviewPanel）。
 - [ ] 将引用片段映射为统一的 `path + start_line + end_line + quote`，供写作 Agent 输入框复用。
 - [ ] 增加 PDF/网页/OCR 的可插拔 ingestion adapter；原始内容仍先进入 raw，再进入 IR。
 - [ ] 评估向量检索和 GraphRAG；在证据链、权限边界和可观察性稳定前不全量注入 wiki。

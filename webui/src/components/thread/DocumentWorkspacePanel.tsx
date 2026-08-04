@@ -322,12 +322,7 @@ function KnowledgeOverview({
   detail: KnowledgeProjectDetailPayload;
   onSelectPath: (path: string) => void;
 }) {
-  const quickLinks = [
-    ...(detail.raw_files ?? []).slice(0, 1).map((path) => ({ label: "Raw", path })),
-    ...(detail.ir_files ?? []).slice(0, 1).map((path) => ({ label: "IR", path })),
-    ...(detail.pages ?? []).slice(0, 2).map((page) => ({ label: page.type, path: page.path })),
-    { label: "Graph", path: detail.paths.graph },
-  ];
+  const [graphOpen, setGraphOpen] = useState(false);
   return (
     <section className="border-b bg-primary/[0.035] px-2.5 py-2" aria-label="Knowledge workspace">
       <div className="flex items-center gap-1.5">
@@ -347,22 +342,111 @@ function KnowledgeOverview({
         <span>Relations {detail.counts.relations}</span>
         <span>Reviews {detail.counts.reviews}</span>
       </div>
-      {quickLinks.length > 0 ? (
-        <div className="mt-1.5 flex min-w-0 flex-wrap gap-1">
-          {quickLinks.map((link) => (
-            <button
-              key={`${link.label}:${link.path}`}
-              type="button"
-              className="max-w-full truncate rounded border border-border/60 bg-background/70 px-1.5 py-0.5 text-[10px] text-foreground/75 hover:bg-accent/60"
-              title={link.path}
-              onClick={() => onSelectPath(link.path)}
-            >
-              {link.label}
-            </button>
-          ))}
+      {detail.project.task ? (
+        <div className="mt-1.5 truncate text-[10px] text-muted-foreground">
+          Task {detail.project.task.status} · {detail.project.task.phase} · {detail.project.task.pending_sources} pending
         </div>
       ) : null}
+      <div className="mt-1.5 space-y-1">
+        <KnowledgePathGroup title="Raw Files" paths={detail.raw_files ?? []} onSelectPath={onSelectPath} />
+        <KnowledgePathGroup title="Extracted IR" paths={detail.ir_files ?? []} onSelectPath={onSelectPath} />
+        <KnowledgePathGroup title="Wiki Pages" paths={(detail.pages ?? []).map((page) => page.path)} onSelectPath={onSelectPath} />
+        <KnowledgePathGroup title="Graph" paths={[detail.paths.graph]} onSelectPath={onSelectPath} />
+      </div>
+      {detail.graph && detail.graph.nodes.length > 0 ? (
+        <>
+          <button
+            type="button"
+            className="mt-1.5 w-full rounded border border-border/60 bg-background/70 px-1.5 py-1 text-left text-[10px] text-foreground/75 hover:bg-accent/60"
+            aria-expanded={graphOpen}
+            onClick={() => setGraphOpen((value) => !value)}
+          >
+            {graphOpen ? "Hide graph preview" : `Show graph preview · ${detail.graph.nodes.length} nodes`}
+          </button>
+          {graphOpen ? <KnowledgeGraphPreview graph={detail.graph} /> : null}
+        </>
+      ) : null}
     </section>
+  );
+}
+
+function KnowledgePathGroup({
+  title,
+  paths,
+  onSelectPath,
+}: {
+  title: string;
+  paths: string[];
+  onSelectPath: (path: string) => void;
+}) {
+  if (paths.length === 0) return null;
+  const visible = paths.slice(0, 8);
+  return (
+    <details className="rounded border border-border/50 bg-background/55" open>
+      <summary className="cursor-pointer select-none px-1.5 py-1 text-[10px] font-medium text-foreground/75">
+        {title} <span className="text-muted-foreground">({paths.length})</span>
+      </summary>
+      <div className="space-y-0.5 border-t border-border/40 px-1 py-1">
+        {visible.map((path) => (
+          <button
+            key={path}
+            type="button"
+            className="block w-full truncate rounded px-1 py-0.5 text-left text-[10px] text-muted-foreground hover:bg-accent/60 hover:text-foreground"
+            title={path}
+            onClick={() => onSelectPath(path)}
+          >
+            {path}
+          </button>
+        ))}
+        {paths.length > visible.length ? (
+          <div className="px-1 pt-0.5 text-[9px] text-muted-foreground">+{paths.length - visible.length} more in file tree</div>
+        ) : null}
+      </div>
+    </details>
+  );
+}
+
+function KnowledgeGraphPreview({
+  graph,
+}: {
+  graph: NonNullable<KnowledgeProjectDetailPayload["graph"]>;
+}) {
+  const nodes = graph.nodes.slice(0, 30);
+  const width = 236;
+  const height = 150;
+  const centerX = width / 2;
+  const centerY = height / 2;
+  const radius = Math.max(22, Math.min(58, nodes.length * 3));
+  const positions = new Map(
+    nodes.map((node, index) => {
+      const angle = nodes.length === 1 ? 0 : (index / nodes.length) * Math.PI * 2 - Math.PI / 2;
+      return [node.id, {
+        x: centerX + Math.cos(angle) * radius,
+        y: centerY + Math.sin(angle) * radius,
+      }];
+    }),
+  );
+  return (
+    <div className="mt-1 overflow-hidden rounded border border-border/60 bg-background/75 p-1" aria-label="Knowledge graph preview">
+      <svg viewBox={`0 0 ${width} ${height}`} className="h-[150px] w-full" role="img" aria-label="Knowledge graph">
+        {graph.edges.slice(0, 80).map((edge, index) => {
+          const source = positions.get(edge.source);
+          const target = positions.get(edge.target);
+          if (!source || !target) return null;
+          return <line key={`${edge.source}:${edge.target}:${index}`} x1={source.x} y1={source.y} x2={target.x} y2={target.y} stroke="currentColor" strokeOpacity="0.22" strokeWidth="1" />;
+        })}
+        {nodes.map((node) => {
+          const position = positions.get(node.id);
+          if (!position) return null;
+          return (
+            <g key={node.id} transform={`translate(${position.x},${position.y})`}>
+              <circle r="6" fill="hsl(var(--primary))" fillOpacity="0.78" />
+              <text x="8" y="3" className="fill-foreground/75 text-[7px]">{(node.title || node.id).slice(0, 18)}</text>
+            </g>
+          );
+        })}
+      </svg>
+    </div>
   );
 }
 

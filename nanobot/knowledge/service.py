@@ -16,6 +16,7 @@ from nanobot.knowledge.models import (
     KnowledgeRelation,
     KnowledgeReview,
     KnowledgeSource,
+    KnowledgeTask,
     new_id,
 )
 from nanobot.knowledge.store import KnowledgeStore, KnowledgeStoreError
@@ -39,6 +40,39 @@ class KnowledgeService:
 
     def __init__(self, store: KnowledgeStore) -> None:
         self.store = store
+
+    def _task_for_project(self, project: KnowledgeProject) -> KnowledgeTask:
+        """Load or initialize the durable task associated with a project."""
+        try:
+            task = self.store.get_task(project.id)
+        except KnowledgeStoreError:
+            task = KnowledgeTask(
+                id=new_id("task"),
+                project_id=project.id,
+                source_root=project.source_root,
+                schema_name=project.schema_name,
+            )
+        project.metadata["task_id"] = task.id
+        return task
+
+    def _save_task(
+        self,
+        project: KnowledgeProject,
+        task: KnowledgeTask,
+        *,
+        phase: str | None = None,
+        status: str | None = None,
+        last_error: str | None = None,
+    ) -> None:
+        if phase is not None:
+            task.phase = phase
+        if status is not None:
+            task.status = status
+        if last_error is not None:
+            task.last_error = last_error
+        task.updated_at = _now()
+        self.store.save_task(task)
+        project.metadata["task_id"] = task.id
 
     def resolve_source(self, raw_path: str) -> Path:
         candidate = Path(raw_path).expanduser()
@@ -105,6 +139,13 @@ class KnowledgeService:
         project.status = "active"
         project.updated_at = _now()
         project.metadata["scan_limit"] = max_files
+        task = self._task_for_project(project)
+        task.source_root = str(source_root)
+        task.schema_name = project.schema_name
+        task.pending_sources = [source.relative_path for source in sources]
+        task.completed_sources = []
+        task.last_error = ""
+        self._save_task(project, task, phase="scanned", status="active")
         self.store.save_project(project)
         manifest = self.store.project_path(project.id) / "knowledge" / "manifest.json"
         self.store._write_json(
@@ -119,6 +160,7 @@ class KnowledgeService:
         )
         return {
             "project": project.to_dict(),
+            "task": task.to_dict(),
             "files": len(sources),
             "documents": [source.relative_path for source in sources],
             "manifest": manifest.relative_to(self.store.project_path(project.id)).as_posix(),
@@ -182,6 +224,11 @@ class KnowledgeService:
         project.ir_files = sorted(set([*project.ir_files, relative_ir]))
         project.phase = "extracting"
         project.updated_at = _now()
+        task = self._task_for_project(project)
+        task.pending_sources = [item for item in task.pending_sources if item != normalized_source]
+        if normalized_source not in task.completed_sources:
+            task.completed_sources.append(normalized_source)
+        self._save_task(project, task, phase="extracting", status="active")
         self.store.save_project(project)
         return {
             "project_id": project_id,
@@ -194,10 +241,26 @@ class KnowledgeService:
         }
 
     def compile(self, project_id: str) -> dict[str, Any]:
-        return compile_project(self.store, project_id)
+        result = compile_project(self.store, project_id)
+        project = self.store.get_project(project_id)
+        task = self._task_for_project(project)
+        self._save_task(project, task, phase="compiled", status="active")
+        self.store.save_project(project)
+        return result
 
     def validate(self, project_id: str) -> dict[str, Any]:
-        return validate_project(self.store, project_id)
+        result = validate_project(self.store, project_id)
+        project = self.store.get_project(project_id)
+        task = self._task_for_project(project)
+        self._save_task(
+            project,
+            task,
+            phase="validated" if result["passed"] else "validation_failed",
+            status="active" if result["passed"] else "needs_changes",
+            last_error="" if result["passed"] else f"{result['issue_count']} validation issue(s)",
+        )
+        self.store.save_project(project)
+        return result
 
     def review(self, project_id: str) -> dict[str, Any]:
         validation = self.validate(project_id)
@@ -210,6 +273,14 @@ class KnowledgeService:
         )
         review_path = self.store.save_review(review)
         project = self.store.get_project(project_id)
+        task = self._task_for_project(project)
+        self._save_task(
+            project,
+            task,
+            phase="validated" if validation["passed"] else "validation_failed",
+            status="active" if validation["passed"] else "needs_changes",
+            last_error="" if validation["passed"] else f"{validation['issue_count']} validation issue(s)",
+        )
         project.metadata["last_review"] = review.to_dict()
         project.updated_at = _now()
         self.store.save_project(project)
@@ -227,6 +298,8 @@ class KnowledgeService:
         if not validation["passed"]:
             return {"published": False, "validation": validation}
         project = self.store.get_project(project_id)
+        task = self._task_for_project(project)
+        self._save_task(project, task, phase="published", status="completed", last_error="")
         project.phase = "published"
         project.status = "published"
         project.updated_at = _now()

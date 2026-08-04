@@ -681,6 +681,31 @@ class GatewayHTTPHandler:
         ir_values = store.list_ir(project.id)
         entity_count = sum(len(ir.entities) for ir in ir_values)
         relation_count = sum(len(ir.relations) for ir in ir_values)
+        task = None
+        try:
+            task_value = store.get_task(project.id)
+            task = {
+                "id": task_value.id,
+                "status": task_value.status,
+                "phase": task_value.phase,
+                "pending_sources": len(task_value.pending_sources),
+                "completed_sources": len(task_value.completed_sources),
+                "updated_at": task_value.updated_at,
+            }
+        except KnowledgeNotFoundError:
+            pass
+        graph: dict[str, Any] = {"nodes": [], "edges": []}
+        graph_path = project_root / "knowledge" / "graph" / "graph.json"
+        if graph_path.exists():
+            try:
+                graph_value = json.loads(graph_path.read_text(encoding="utf-8"))
+                if isinstance(graph_value, dict):
+                    graph = {
+                        "nodes": [node for node in graph_value.get("nodes", []) if isinstance(node, dict)][:200],
+                        "edges": [edge for edge in graph_value.get("edges", []) if isinstance(edge, dict)][:400],
+                    }
+            except (OSError, json.JSONDecodeError):
+                graph = {"nodes": [], "edges": []}
         raw_files = [
             project_root.joinpath("raw", source.raw_relative_path).relative_to(scope.project_path).as_posix()
             for source in project.sources
@@ -699,6 +724,7 @@ class GatewayHTTPHandler:
                 "page_count": project.page_count,
                 "source_count": len(project.sources),
                 "updated_at": project.updated_at,
+                "task": task,
             },
             "counts": {
                 "sources": len(project.sources),
@@ -718,6 +744,7 @@ class GatewayHTTPHandler:
             "ir_files": ir_files[:100],
             "pages": pages[:300],
             "pages_truncated": len(pages) > 300,
+            "graph": graph,
         })
 
     def _handle_session_automations(self, request: WsRequest, key: str) -> Response:

@@ -20,7 +20,7 @@ def knowledge_context_raw(metadata: Mapping[str, Any] | None) -> dict[str, str]:
         return {}
     value = cast(Mapping[str, Any], raw)
     result: dict[str, str] = {}
-    for key in ("project_id", "source_root", "phase", "selected_project_id"):
+    for key in ("task_id", "project_id", "source_root", "phase", "selected_project_id"):
         candidate = value.get(key)
         if isinstance(candidate, str) and candidate.strip():
             result[key] = candidate.strip()
@@ -34,6 +34,7 @@ def set_knowledge_context(
     source_root: str | None = None,
     phase: str | None = None,
     selected_project_id: str | None = None,
+    task_id: str | None = None,
 ) -> dict[str, str]:
     current = knowledge_context_raw(metadata)
     values = {
@@ -41,6 +42,7 @@ def set_knowledge_context(
         "source_root": source_root,
         "phase": phase,
         "selected_project_id": selected_project_id,
+        "task_id": task_id,
     }
     for key, value in values.items():
         if value is not None:
@@ -87,6 +89,16 @@ def knowledge_context_runtime_lines(
                 f"Published pages: {project.page_count}",
                 "Next: use knowledge_extract, knowledge_compile, knowledge_validate, then knowledge_publish.",
             ])
+            try:
+                task = store.get_task(project_id)
+                lines.extend([
+                    f"Knowledge Task: {task.id}",
+                    f"Task status: {task.status}",
+                    f"Task phase: {task.phase}",
+                    f"Pending sources: {len(task.pending_sources)}",
+                ])
+            except KnowledgeNotFoundError:
+                lines.append("Knowledge task state is missing; continue by using the next Knowledge tool.")
         except KnowledgeNotFoundError:
             lines.append("Project pointer is stale; call knowledge_scan to recover it.")
     if selected_project_id and selected_project_id != project_id:

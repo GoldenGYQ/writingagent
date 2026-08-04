@@ -14,7 +14,9 @@ in the timeline.
 ## Required workflow
 
 1. Call `knowledge_scan` on the source directory first. Keep the returned
-   project id and use only source paths from its manifest.
+   project id and use only source paths from its manifest. The runtime creates
+   a resumable `knowledge/task.json`; do not reset it by starting a second
+   scan unless the user asks to rebuild the project.
 2. Read or inspect the relevant source files, then call `knowledge_extract`
    with typed page drafts (`entity`, `concept`, `source`, `query`,
    `comparison`, or `synthesis`) and source-linked evidence.
@@ -31,7 +33,8 @@ in the timeline.
 - Do not directly edit generated wiki Markdown during extraction. The typed
   Knowledge IR is the durable hand-off between the Agent and compiler.
 - Do not inject the entire wiki into an ordinary chat turn. When the user has
-  selected a project, use `knowledge_search` and quote bounded snippets with
-  their generated wiki path and line range.
+  selected a project, use `knowledge_search` with `page_type`, `tag`, or
+  `source_path` filters when useful. Quote the bounded `quote`/`citation`
+  object and prefer its `source_citations` when writing evidence-based text.
 - If a source or page is uncertain, record a query or synthesis page and state
   the uncertainty instead of inventing a relation.

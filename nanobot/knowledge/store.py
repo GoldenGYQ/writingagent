@@ -10,7 +10,13 @@ from pathlib import Path
 from tempfile import NamedTemporaryFile
 from typing import Any, cast
 
-from nanobot.knowledge.models import KnowledgeIR, KnowledgePage, KnowledgeProject, KnowledgeReview
+from nanobot.knowledge.models import (
+    KnowledgeIR,
+    KnowledgePage,
+    KnowledgeProject,
+    KnowledgeReview,
+    KnowledgeTask,
+)
 
 # Wiki slugs may be Chinese or other Unicode text.  They still must be a
 # single safe path component and must not contain traversal or Windows-invalid
@@ -184,6 +190,17 @@ class KnowledgeStore:
 
     def review_root(self, project_id: str) -> Path:
         return self.project_path(project_id) / "knowledge" / "reviews"
+
+    def task_path(self, project_id: str) -> Path:
+        return self.project_path(project_id) / "knowledge" / "task.json"
+
+    def save_task(self, task: KnowledgeTask) -> str:
+        path = self.task_path(task.project_id)
+        self._write_json(path, task.to_dict())
+        return path.relative_to(self.project_path(task.project_id)).as_posix()
+
+    def get_task(self, project_id: str) -> KnowledgeTask:
+        return KnowledgeTask.from_dict(self._read_json(self.task_path(project_id)))
 
     def save_review(self, review: KnowledgeReview) -> str:
         path = self.review_root(review.project_id) / f"{review.id}.json"

@@ -266,6 +266,46 @@ class KnowledgeProject:
 
 
 @dataclass
+class KnowledgeTask:
+    """Durable, resumable workflow state for one Knowledge project."""
+
+    id: str
+    project_id: str
+    kind: str = "knowledge_generation"
+    status: str = "active"
+    phase: str = "scanning"
+    source_root: str = ""
+    schema_name: str = "default"
+    pending_sources: list[str] = field(default_factory=list)
+    completed_sources: list[str] = field(default_factory=list)
+    last_error: str = ""
+    created_at: str = field(default_factory=utc_now)
+    updated_at: str = field(default_factory=utc_now)
+    metadata: dict[str, Any] = field(default_factory=dict)
+
+    def to_dict(self) -> dict[str, Any]:
+        return asdict(self)
+
+    @classmethod
+    def from_dict(cls, value: Mapping[str, Any]) -> KnowledgeTask:
+        return cls(
+            id=_text(value.get("id")),
+            project_id=_text(value.get("project_id")),
+            kind=_text(value.get("kind"), "knowledge_generation"),
+            status=_text(value.get("status"), "active"),
+            phase=_text(value.get("phase"), "scanning"),
+            source_root=_text(value.get("source_root")),
+            schema_name=_text(value.get("schema_name"), "default"),
+            pending_sources=[item for item in _list(value.get("pending_sources")) if isinstance(item, str)],
+            completed_sources=[item for item in _list(value.get("completed_sources")) if isinstance(item, str)],
+            last_error=_text(value.get("last_error")),
+            created_at=_text(value.get("created_at"), utc_now()),
+            updated_at=_text(value.get("updated_at"), utc_now()),
+            metadata=dict(value.get("metadata") or {}),
+        )
+
+
+@dataclass
 class KnowledgeReview:
     """Durable review gate created from a validation pass."""
 

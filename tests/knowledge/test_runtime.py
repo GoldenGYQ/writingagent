@@ -108,6 +108,9 @@ def test_scan_extract_compile_validate_publish_reference_shape(tmp_path):
     assert KnowledgeStore(tmp_path).get_project(project_id).phase == "published"
     graph = json.loads((project_path / "knowledge" / "graph" / "graph.json").read_text(encoding="utf-8"))
     assert any(edge["relation"] == "implements" for edge in graph["edges"])
+    task = json.loads((project_path / "knowledge" / "task.json").read_text(encoding="utf-8"))
+    assert task["status"] == "completed"
+    assert task["phase"] == "published"
 
 
 def test_compile_merges_existing_pages_and_does_not_duplicate_log(tmp_path):
@@ -158,7 +161,8 @@ async def test_search_returns_bounded_source_linked_snippets(tmp_path):
         "type": "concept",
         "title": "Runtime",
         "slug": "runtime",
-        "body": "The tool-calling loop is observable.",
+            "body": "The execution tool-calling loop is observable.",
+        "tags": ["runtime"],
     }])
     service.compile(project_id)
     sessions = SessionManager(tmp_path)
@@ -170,11 +174,15 @@ async def test_search_returns_bounded_source_linked_snippets(tmp_path):
         workspace=tmp_path,
         metadata={"knowledge_project_id": project_id},
     )):
-        result = await tool.execute(query="observable", limit=1)
+        result = await tool.execute(query="execution", limit=1, page_type="concept", tag="runtime")
     payload = json.loads(str(result))
     assert payload["project_id"] == project_id
     assert payload["matches"][0]["path"].endswith("runtime.md")
     assert payload["matches"][0]["start_line"] <= payload["matches"][0]["end_line"]
+    assert payload["matches"][0]["quote"] == payload["matches"][0]["snippet"]
+    assert payload["matches"][0]["citation"]["path"].startswith("wikis/")
+    assert payload["matches"][0]["source_citations"][0]["source_path"] == "runtime.md"
+    assert payload["filters"]["page_type"] == "concept"
 
 
 @pytest.mark.asyncio
@@ -189,11 +197,16 @@ async def test_knowledge_runtime_context_is_conditional_and_bounded(tmp_path):
     )
     assert await provider(request) is None
 
+    project_id = KnowledgeService(KnowledgeStore(tmp_path)).scan(
+        str(_source_tree(tmp_path)),
+        title="Runtime context task",
+    )["project"]["id"]
     session = sessions.get_or_create(request.session_key)
-    set_knowledge_context(session.metadata, project_id="kb_demo", source_root="raw")
+    set_knowledge_context(session.metadata, project_id=project_id, source_root="raw")
     sessions.save(session)
     block = await provider(request)
     assert block is not None
     assert "[Knowledge Runtime]" in block.content
+    assert "Knowledge Task:" in block.content
     assert "[Working Plan Guidance]" not in block.content
     assert len(block.content) <= 4_000
