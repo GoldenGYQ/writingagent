@@ -102,3 +102,11 @@ Writing Agent 集成已完成后端第一步：`knowledge_search` 会返回并�
 - 真实任务最终完成 14 个 IR、30 个编译页面（另有 overview 投影）；抽取阶段记录 86 条关系，清理无目标条目后最终图快照为 79 条边。第一次校验的 172 个 wikilink 错误来自 related 使用标题而非 slug，已通过编译器的 title-to-slug 兼容映射固化，并验证 `passed=true`、`quality_issue_count=0`、`issue_count=0`、`published=true`。
 - 当前源码复核结果：目标项目 31 个可读 Markdown 页面中，`entity/concept/source` 页面无短正文、无空 tags、无缺失 sources；直接调用当前 `validate_project()` 返回 0 issues。
 - 与 `NANOTEST2` 参考库的差异是规模而非结构：参考库 185 页，本轮 30 个抽取页；本轮已对齐 typed frontmatter、source evidence、related/graph、validation/publish 闭环，后续可通过更细粒度的 schema/领域切分提升页面数量与深度。
+
+## 2026-08-05 全新项目清洁回归（最终记录）
+
+- 使用本地 WebUI 的真实 `deepseek-v4-flash` 通道，在 `D:\Users\gyq16\Desktop\PRJ\NANOTEST3` 新建项目 `kb_0286cd6f13724442a25b413c73a3f74e`，未使用 mock、离线填充或人工修正文档。
+- Agent 自主完成 `scan → extract → compile → validate → publish`：扫描 14 个 Markdown 源文件，生成 14 个 IR 文件；首次校验发现 19 个问题（2 个正文过短、17 个关系目标问题），随后 Agent 依据校验结果修复 IR，并删除生成目录后重新编译，避免增量产物残留。
+- 最终任务状态为 `completed/published`：49 个图节点、142 条关系边、48 个带 frontmatter 的内容页（另含 `index.md`、`log.md`），`quality_issue_count=0`、`issue_count=0`、`published=true`。
+- 离线审计结果：`entity/concept/source` 页面无正文过短、无空 tags、无缺失 sources；related 均可解析到标题或图节点；图边端点全部存在。说明质量门和标题到 slug 的兼容映射已在真实模型链路中生效。
+- 与 `D:\Users\gyq16\Desktop\PRJ\NANOTEST2\wikis` 的 185 页参考库相比，本轮页面数量仍较少（26 entity、7 concept、14 source），这是模型抽取粒度差异，不是发布结构错误；当前应优先保留“可追溯、可校验、可发布”的闭环，后续再通过 schema 分层、章节级实体拆分提升覆盖率。
