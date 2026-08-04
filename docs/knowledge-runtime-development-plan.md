@@ -23,6 +23,7 @@ Knowledge Service（核心逻辑）
 - [x] `nanobot/knowledge/models.py`：Source、Page、Relation、Entity、IR、Project。
 - [x] `store.py`：workspace-scoped、原子写入、路径校验、项目/IR/raw/review/wiki 持久化。
 - [x] `service.py`：扫描 source、镜像 raw、保存 IR、编译、校验、Review、发布，并持久化可恢复的 `knowledge/task.json`。
+- [x] 编译/校验异常会将 `compile_failed` / `validation_failed` 与有界 `last_error` 写回 task/project，便于恢复和诊断。
 - [x] `compiler.py`：frontmatter 页面、`index.md`、`overview.md`、`log.md`、`graph.json`；重复编译合并正文且不重复写 ingest 日志。
 - [x] `knowledge_scan` / `knowledge_extract` / `knowledge_compile` / `knowledge_validate` / `knowledge_publish` 工具。
 - [x] `knowledge_search`：仅检索选中的知识项目，支持 page type/tag/source path 过滤，返回有界 quote、wiki 行号和 raw source citations。
