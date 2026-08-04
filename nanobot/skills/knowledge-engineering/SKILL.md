@@ -20,6 +20,9 @@ in the timeline.
 2. Read or inspect the relevant source files, then call `knowledge_extract`
    with typed page drafts (`entity`, `concept`, `source`, `query`,
    `comparison`, or `synthesis`) and source-linked evidence.
+   For scanned PDFs, use `read_file` with its bounded `pages` argument before
+   extracting; keep the PDF itself as the raw source and do not paste the
+   whole document into the runtime context.
 3. Call `knowledge_compile` only after the selected extraction work is saved.
    Compilation writes merged Markdown views under `wiki/` (legacy projects may
    use `knowledge/wiki/`); it does

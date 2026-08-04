@@ -21,9 +21,10 @@ from nanobot.knowledge.models import (
 )
 from nanobot.knowledge.store import KnowledgeNotFoundError, KnowledgeStore, KnowledgeStoreError
 
-_TEXT_EXTENSIONS = frozenset({
+_SOURCE_EXTENSIONS = frozenset({
     ".md", ".markdown", ".txt", ".rst", ".py", ".js", ".ts", ".tsx", ".jsx",
     ".json", ".yaml", ".yml", ".toml", ".ini", ".cfg", ".tex", ".csv",
+    ".pdf",
 })
 _SKIP_DIRS = frozenset({
     ".git", ".hg", ".svn", ".nanobot", ".venv", "venv", "node_modules",
@@ -131,7 +132,7 @@ class KnowledgeService:
         for path in sorted(source_root.rglob("*")):
             if len(sources) >= max(1, min(max_files, 10_000)):
                 break
-            if not path.is_file() or path.suffix.lower() not in _TEXT_EXTENSIONS:
+            if not path.is_file() or path.suffix.lower() not in _SOURCE_EXTENSIONS:
                 continue
             if any(part in _SKIP_DIRS for part in path.relative_to(source_root).parts):
                 continue
@@ -149,7 +150,11 @@ class KnowledgeService:
                     size=stat.st_size,
                     modified_at=datetime.fromtimestamp(stat.st_mtime, timezone.utc).isoformat(),
                     sha256=hashlib.sha256(raw).hexdigest(),
-                    kind="markdown" if path.suffix.lower() in {".md", ".markdown"} else "text",
+                    kind=(
+                        "markdown" if path.suffix.lower() in {".md", ".markdown"}
+                        else "pdf" if path.suffix.lower() == ".pdf"
+                        else "text"
+                    ),
                 )
             )
             self.store.write_raw(project.id, sources[-1].raw_relative_path, raw)
