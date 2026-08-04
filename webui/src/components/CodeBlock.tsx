@@ -1,4 +1,4 @@
-import { Suspense, lazy, useCallback, useState, type ReactNode } from "react";
+import { Suspense, lazy, useCallback, useState, type HTMLProps, type ReactNode } from "react";
 import { Check, Copy } from "lucide-react";
 import { useTranslation } from "react-i18next";
 
@@ -100,6 +100,8 @@ const LazyHighlightedCode = lazy(async () => {
             fontFamily: CODE_FONT_STACK,
             userSelect: "none",
           }}
+          lineProps={(lineNumber) => ({ "data-file-line": lineNumber } as unknown as HTMLProps<HTMLElement>)}
+          wrapLines
           PreTag="pre"
           showLineNumbers={showLineNumbers}
           wrapLongLines={wrapLongLines}
@@ -154,7 +156,7 @@ function CodeTextBlock({
       <code className="text-inherit">
         {showLineNumbers ? (
           lines.map((line, index) => (
-            <span key={index} className="flex min-w-max">
+            <span key={index} className="flex min-w-max" data-file-line={index + 1}>
               <span className="w-10 shrink-0 select-none pr-4 text-right text-muted-foreground/60">
                 {index + 1}
               </span>
