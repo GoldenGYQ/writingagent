@@ -27,6 +27,7 @@ from nanobot.knowledge.context import (
     KNOWLEDGE_PROJECT_ID_METADATA,
     KnowledgeContextProvider,
     knowledge_context_raw,
+    set_knowledge_citations,
     set_knowledge_context,
 )
 from nanobot.knowledge.service import KnowledgeService
@@ -93,6 +94,7 @@ def _source_citation(
         "start_line": start + 1,
         "end_line": end,
         "quote": quote,
+        "project_id": project.id,
         "source_path": source.relative_path,
     }
 
@@ -124,6 +126,23 @@ class _KnowledgeToolMixin:
         context = set_knowledge_context(session.metadata, **values)
         self._sessions.save(session)
         return context
+
+    def _set_citations(
+        self,
+        citations: list[dict[str, Any]],
+        *,
+        project_id: str,
+    ) -> list[dict[str, Any]]:
+        session = self._session()
+        if session is None:
+            return []
+        normalized = set_knowledge_citations(
+            session.metadata,
+            citations,
+            project_id=project_id,
+        )
+        self._sessions.save(session)
+        return normalized
 
     @staticmethod
     def _error(error: Exception) -> ToolResult:
@@ -498,11 +517,24 @@ class KnowledgeSearchTool(Tool, _KnowledgeToolMixin):
                         "start_line": start + 1,
                         "end_line": end,
                         "quote": snippet,
+                        "project_id": project.id,
+                        "page_path": path.relative_to(store.project_path(project_id)).as_posix(),
                     },
                     "source_citations": source_citations,
                 })
                 if len(matches) >= min(limit or 10, 20):
                     break
+            citations: list[dict[str, Any]] = []
+            for match in matches:
+                raw_citations = match.get("source_citations")
+                if isinstance(raw_citations, list):
+                    citations.extend(
+                        item for item in raw_citations if isinstance(item, dict)
+                    )
+                if not raw_citations and isinstance(match.get("citation"), dict):
+                    citations.append(match["citation"])
+            saved_citations = self._set_citations(citations, project_id=project_id)
+            self._set_context(selected_project_id=project_id)
             return _json({
                 "project_id": project_id,
                 "query": query,
@@ -512,6 +544,8 @@ class KnowledgeSearchTool(Tool, _KnowledgeToolMixin):
                     "source_path": source_path,
                 },
                 "matches": matches,
+                "citations": saved_citations,
+                "citation_count": len(saved_citations),
             })
         except Exception as error:
             return self._error(error)

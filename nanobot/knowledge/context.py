@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
 from typing import Any, cast
 
 from nanobot.knowledge.store import KnowledgeNotFoundError, KnowledgeStore
@@ -11,7 +11,10 @@ from nanobot.runtime_context import RuntimeContextBlock, wrap_runtime_context_li
 KNOWLEDGE_CONTEXT_KEY = "knowledge_context"
 KNOWLEDGE_REQUESTED_METADATA = "knowledge_requested"
 KNOWLEDGE_PROJECT_ID_METADATA = "knowledge_project_id"
+KNOWLEDGE_CITATIONS_KEY = "knowledge_citations"
 MAX_KNOWLEDGE_CONTEXT_CHARS = 4_000
+MAX_KNOWLEDGE_CITATIONS = 20
+MAX_KNOWLEDGE_QUOTE_CHARS = 2_000
 
 
 def knowledge_context_raw(metadata: Mapping[str, Any] | None) -> dict[str, str]:
@@ -52,6 +55,70 @@ def set_knowledge_context(
                 current.pop(key, None)
     metadata[KNOWLEDGE_CONTEXT_KEY] = current
     return current
+
+
+def knowledge_citations_raw(metadata: Mapping[str, Any] | None) -> list[dict[str, Any]]:
+    """Return bounded, normalized citations saved by the latest knowledge search.
+
+    Citations are deliberately stored separately from the small string-only
+    runtime context.  They are provenance pointers for a subsequent writing
+    ChangeSet, not document content to inject into every model request.
+    """
+    raw = metadata.get(KNOWLEDGE_CITATIONS_KEY) if metadata else None
+    if not isinstance(raw, list):
+        return []
+    result: list[dict[str, Any]] = []
+    for raw_item in raw:
+        if not isinstance(raw_item, Mapping):
+            continue
+        item = cast(Mapping[str, Any], raw_item)
+        path = item.get("path")
+        quote = item.get("quote")
+        start_line = item.get("start_line")
+        end_line = item.get("end_line")
+        if not isinstance(path, str) or not path.strip():
+            continue
+        if not isinstance(quote, str):
+            quote = ""
+        if not isinstance(start_line, int) or start_line < 1:
+            continue
+        if not isinstance(end_line, int) or end_line < start_line:
+            continue
+        citation: dict[str, Any] = {
+            "path": path.strip()[:2_000],
+            "start_line": start_line,
+            "end_line": end_line,
+            "quote": quote[:MAX_KNOWLEDGE_QUOTE_CHARS],
+        }
+        for key in ("project_id", "source_path", "page_path"):
+            value = item.get(key)
+            if isinstance(value, str) and value.strip():
+                citation[key] = value.strip()[:2_000]
+        result.append(citation)
+        if len(result) >= MAX_KNOWLEDGE_CITATIONS:
+            break
+    return result
+
+
+def set_knowledge_citations(
+    metadata: dict[str, Any],
+    citations: Sequence[Mapping[str, Any]],
+    *,
+    project_id: str | None = None,
+) -> list[dict[str, Any]]:
+    """Persist only normalized citations for the active knowledge project."""
+    normalized: list[dict[str, Any]] = []
+    for item in citations:
+        if not isinstance(item, Mapping):
+            continue
+        candidate = dict(item)
+        if project_id and not candidate.get("project_id"):
+            candidate["project_id"] = project_id
+        normalized.extend(knowledge_citations_raw({KNOWLEDGE_CITATIONS_KEY: [candidate]}))
+        if len(normalized) >= MAX_KNOWLEDGE_CITATIONS:
+            break
+    metadata[KNOWLEDGE_CITATIONS_KEY] = normalized[:MAX_KNOWLEDGE_CITATIONS]
+    return normalized[:MAX_KNOWLEDGE_CITATIONS]
 
 
 def _request_selected_project(request: Any) -> str | None:

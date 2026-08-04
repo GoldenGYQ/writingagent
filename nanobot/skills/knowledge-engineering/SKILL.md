@@ -37,5 +37,9 @@ in the timeline.
   selected a project, use `knowledge_search` with `page_type`, `tag`, or
   `source_path` filters when useful. Quote the bounded `quote`/`citation`
   object and prefer its `source_citations` when writing evidence-based text.
+- For evidence-dependent writing, pass the returned `citations` to
+  `writing_changeset.sources`. If `sources` is omitted, the writing tool may
+  carry the latest citations from the currently selected Knowledge project;
+  never mix citations from another project.
 - If a source or page is uncertain, record a query or synthesis page and state
   the uncertainty instead of inventing a relation.
