@@ -74,6 +74,27 @@ class KnowledgeService:
         self.store.save_task(task)
         project.metadata["task_id"] = task.id
 
+    def _record_task_error(self, project_id: str, *, phase: str, error: Exception) -> None:
+        """Persist a bounded failure state without hiding the original error."""
+        try:
+            project = self.store.get_project(project_id)
+            task = self._task_for_project(project)
+            self._save_task(
+                project,
+                task,
+                phase=phase,
+                status="needs_changes",
+                last_error=str(error)[:2_000],
+            )
+            project.phase = phase
+            project.status = "needs_changes"
+            project.updated_at = _now()
+            self.store.save_project(project)
+        except Exception:
+            # The original operation error is more actionable than a secondary
+            # persistence error; callers still receive the original exception.
+            return
+
     def resolve_source(self, raw_path: str) -> Path:
         candidate = Path(raw_path).expanduser()
         if not candidate.is_absolute():
@@ -241,7 +262,11 @@ class KnowledgeService:
         }
 
     def compile(self, project_id: str) -> dict[str, Any]:
-        result = compile_project(self.store, project_id)
+        try:
+            result = compile_project(self.store, project_id)
+        except Exception as error:
+            self._record_task_error(project_id, phase="compile_failed", error=error)
+            raise
         project = self.store.get_project(project_id)
         task = self._task_for_project(project)
         self._save_task(project, task, phase="compiled", status="active")
@@ -249,7 +274,11 @@ class KnowledgeService:
         return result
 
     def validate(self, project_id: str) -> dict[str, Any]:
-        result = validate_project(self.store, project_id)
+        try:
+            result = validate_project(self.store, project_id)
+        except Exception as error:
+            self._record_task_error(project_id, phase="validation_failed", error=error)
+            raise
         project = self.store.get_project(project_id)
         task = self._task_for_project(project)
         self._save_task(
