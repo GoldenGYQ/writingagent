@@ -58,7 +58,7 @@ def _frontmatter_list(value: Any) -> str:
 
 def render_page(page: KnowledgePage) -> str:
     """Render one page using the reference wiki frontmatter contract."""
-    frontmatter = "\n".join([
+    frontmatter_lines = [
         "---",
         f"type: {page.type}",
         f"title: {json.dumps(page.title, ensure_ascii=False)}",
@@ -67,8 +67,13 @@ def render_page(page: KnowledgePage) -> str:
         f"sources: {_frontmatter_list(page.sources)}",
         f"created: {page.created}",
         f"updated: {page.updated}",
-        "---",
-    ])
+    ]
+    if page.type == "source":
+        for key in ("authors", "year", "url", "venue"):
+            value = page.metadata.get(key, [] if key == "authors" else "")
+            serialized = json.dumps(value, ensure_ascii=False) if isinstance(value, (list, dict)) else str(value)
+            frontmatter_lines.append(f"{key}: {serialized}")
+    frontmatter = "\n".join([*frontmatter_lines, "---"])
     body = page.body.strip()
     if not body:
         body = f"# {page.title}\n"
@@ -245,19 +250,11 @@ def compile_project(store: KnowledgeStore, project_id: str) -> dict[str, Any]:
         sources=[source.relative_path for source in project.sources[:100]],
     )
     store.write_page(project_id, overview, render_page(overview))
-    store.write_page(
-        project_id,
-        KnowledgePage(type="overview", title="Wiki Index", slug="index", body="\n".join(index_lines)),
-        render_page(
-            KnowledgePage(
-                type="overview",
-                title="Wiki Index",
-                slug="index",
-                body="\n".join(index_lines),
-                related=[page.slug for page in compiled[:100]],
-                sources=[source.relative_path for source in project.sources[:100]],
-            )
-        ),
+    # The reference wiki treats index.md as a plain navigational document;
+    # typed pages retain frontmatter, but index is intentionally readable as-is.
+    store._write_text(
+        store.wiki_root(project_id) / "index.md",
+        "\n".join(index_lines).rstrip() + "\n",
     )
 
     graph_nodes = [
@@ -305,7 +302,8 @@ def _append_log(
     ir_values: list[KnowledgeIR],
     pages: list[KnowledgePage],
 ) -> None:
-    path = store.project_path(project_id) / "knowledge" / "wiki" / "log.md"
+    project = store.get_project(project_id)
+    path = store.wiki_root(project_id) / "log.md"
     path.parent.mkdir(parents=True, exist_ok=True)
     existing = path.read_text(encoding="utf-8") if path.exists() else "# Knowledge Log\n"
     lines = [existing.rstrip()]
@@ -315,7 +313,13 @@ def _append_log(
     for ir in ir_values:
         matches = [page for page in pages if page.source_path == ir.source_path]
         labels = ", ".join(f"[[{page.slug}]] ({page.type})" for page in matches[:30])
-        entry = f"- Ingest: `{ir.source_path}` → created {labels or '(no pages)'}"
+        source = next((item for item in project.sources if item.relative_path == ir.source_path), None)
+        source_ref = (
+            f"raw/{source.raw_relative_path}"
+            if source is not None and source.raw_relative_path
+            else f"raw/sources/{ir.source_path}"
+        )
+        entry = f"- Ingest: `{source_ref}` → created {labels or '(no pages)'}"
         if entry not in existing:
             lines.append(entry)
     store._write_text(path, "\n".join(lines).rstrip() + "\n")
@@ -330,7 +334,7 @@ def validate_project(store: KnowledgeStore, project_id: str) -> dict[str, Any]:
         pages = [
             (path, path.read_text(encoding="utf-8"))
             for path in wiki_root.rglob("*.md")
-            if path.name != "log.md"
+            if path.name not in {"index.md", "log.md"}
         ]
     known_slugs: set[str] = set()
     source_paths = {source.relative_path for source in project.sources}
@@ -347,6 +351,10 @@ def validate_project(store: KnowledgeStore, project_id: str) -> dict[str, Any]:
         for key in ("tags", "related", "sources", "created", "updated"):
             if key not in metadata:
                 issues.append({"kind": "frontmatter", "path": str(path), "message": f"missing {key}"})
+        if page_type == "source":
+            for key in ("authors", "year", "url", "venue"):
+                if key not in metadata:
+                    issues.append({"kind": "frontmatter", "path": str(path), "message": f"missing {key}"})
         if page_type in {"entity", "concept", "source"} and not metadata.get("sources"):
             issues.append({"kind": "evidence", "path": str(path), "message": "page has no source evidence"})
         if isinstance(metadata.get("sources"), list):

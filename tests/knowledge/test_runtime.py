@@ -42,12 +42,12 @@ def test_scan_extract_compile_validate_publish_reference_shape(tmp_path):
         "knowledge/ir",
         "knowledge/reviews",
         "knowledge/graph",
-        "knowledge/wiki/entities",
-        "knowledge/wiki/concepts",
-        "knowledge/wiki/sources",
-        "knowledge/wiki/synthesis",
-        "knowledge/wiki/queries",
-        "knowledge/wiki/comparisons",
+        "wiki/entities",
+        "wiki/concepts",
+        "wiki/sources",
+        "wiki/synthesis",
+        "wiki/queries",
+        "wiki/comparisons",
     ):
         assert (tmp_path / "wikis" / project_id / relative).is_dir()
     assert (
@@ -87,16 +87,16 @@ def test_scan_extract_compile_validate_publish_reference_shape(tmp_path):
     compiled = service.compile(project_id)
     assert compiled["graph"]["nodes"] == 2
     project_path = tmp_path / "wikis" / project_id
-    concept = project_path / "knowledge" / "wiki" / "concepts" / "agent-runtime.md"
-    entity = project_path / "knowledge" / "wiki" / "entities" / "LangGraph.md"
+    concept = project_path / "wiki" / "concepts" / "agent-runtime.md"
+    entity = project_path / "wiki" / "entities" / "LangGraph.md"
     assert concept.exists()
     assert entity.exists()
     metadata, body = parse_frontmatter(concept.read_text(encoding="utf-8"))
     assert metadata["type"] == "concept"
     assert metadata["sources"] == ["runtime.md"]
     assert "coordinates" in body
-    assert (project_path / "knowledge" / "wiki" / "index.md").read_text(encoding="utf-8").startswith("---")
-    assert "runtime.md" in (project_path / "knowledge" / "wiki" / "log.md").read_text(encoding="utf-8")
+    assert (project_path / "wiki" / "index.md").read_text(encoding="utf-8").startswith("# Wiki Index")
+    assert "raw/sources/runtime.md" in (project_path / "wiki" / "log.md").read_text(encoding="utf-8")
 
     validation = service.validate(project_id)
     assert validation["passed"] is True, validation
@@ -134,11 +134,11 @@ def test_compile_merges_existing_pages_and_does_not_duplicate_log(tmp_path):
     service.compile(project_id)
 
     project_path = tmp_path / "wikis" / project_id
-    content = (project_path / "knowledge" / "wiki" / "concepts" / "runtime.md").read_text(encoding="utf-8")
+    content = (project_path / "wiki" / "concepts" / "runtime.md").read_text(encoding="utf-8")
     assert "Original explanation." in content
     assert "Follow-up explanation." in content
-    log = (project_path / "knowledge" / "wiki" / "log.md").read_text(encoding="utf-8")
-    assert log.count("- Ingest: `runtime.md`") == 1
+    log = (project_path / "wiki" / "log.md").read_text(encoding="utf-8")
+    assert log.count("- Ingest: `raw/sources/runtime.md`") == 1
 
 
 def test_source_path_cannot_escape_workspace_or_scan_root(tmp_path):
@@ -150,6 +150,30 @@ def test_source_path_cannot_escape_workspace_or_scan_root(tmp_path):
         service.scan(str(tmp_path.parent))
     with pytest.raises(KnowledgeStoreError, match="outside"):
         service.extract(project_id, str(tmp_path / "outside.md"))
+
+
+def test_source_page_keeps_reference_metadata_shape(tmp_path):
+    source_root = _source_tree(tmp_path)
+    service = KnowledgeService(KnowledgeStore(tmp_path))
+    project_id = service.scan(str(source_root))["project"]["id"]
+    service.extract(project_id, "runtime.md", pages=[{
+        "type": "source",
+        "title": "Agent Runtime source",
+        "slug": "agent-runtime-source",
+        "body": "A source-linked summary.",
+        "metadata": {
+            "authors": ["Nanobot Team"],
+            "year": 2026,
+            "url": "https://example.test/runtime",
+            "venue": "Internal guide",
+        },
+    }])
+    service.compile(project_id)
+    page = (tmp_path / "wikis" / project_id / "wiki" / "sources" / "agent-runtime-source.md").read_text(encoding="utf-8")
+    assert "authors:" in page
+    assert "year: 2026" in page
+    assert "url:" in page and "venue:" in page
+    assert service.validate(project_id)["passed"] is True
 
 
 @pytest.mark.asyncio

@@ -21,7 +21,8 @@ in the timeline.
    with typed page drafts (`entity`, `concept`, `source`, `query`,
    `comparison`, or `synthesis`) and source-linked evidence.
 3. Call `knowledge_compile` only after the selected extraction work is saved.
-   Compilation writes merged Markdown views under `knowledge/wiki`; it does
+   Compilation writes merged Markdown views under `wiki/` (legacy projects may
+   use `knowledge/wiki/`); it does
    not overwrite an existing page body.
 4. Call `knowledge_validate` and resolve missing evidence or wikilinks.
 5. Call `knowledge_publish` only after validation passes.

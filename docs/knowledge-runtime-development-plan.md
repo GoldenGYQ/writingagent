@@ -32,7 +32,7 @@ Knowledge Service（核心逻辑）
 - [x] WebUI 知识库选择器：通过 `/api/sessions/{key}/knowledge-projects` 获取摘要，并在下一条 WebSocket message 中携带 `knowledge_project_id`。
 - [x] Knowledge Workspace 轻量入口：项目摘要、任务状态、Raw/IR/Wiki/Graph 快捷预览，复用现有文件树与 FilePreviewPanel。
 - [x] Graph preview：在现有 Workspace 摘要内提供受限 SVG 关系预览，`graph.json` 仍是持久化真相。
-- [x] `.venv\Scripts\python.exe -m pytest tests/knowledge -q`：5 passed。
+- [x] `.venv\Scripts\python.exe -m pytest tests/knowledge -q`：6 passed。
 - [x] `webui\bun run build`：TypeScript 与生产构建通过。
 
 ## 参考目录映射
@@ -46,7 +46,7 @@ Knowledge Service（核心逻辑）
 │   ├── manifest.json    # scan 结果
 │   ├── ir/*.json        # Agent 结构化抽取中间表示
 │   └── graph/graph.json # 可重建关系快照
-└── knowledge/wiki/
+└── wiki/                    # 新项目默认采用参考目录形态；旧 MVP 项目仍可读取 knowledge/wiki/
     ├── index.md
     ├── overview.md
     ├── log.md
