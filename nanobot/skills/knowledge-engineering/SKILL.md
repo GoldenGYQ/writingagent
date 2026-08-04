@@ -41,5 +41,8 @@ in the timeline.
   `writing_changeset.sources`. If `sources` is omitted, the writing tool may
   carry the latest citations from the currently selected Knowledge project;
   never mix citations from another project.
+- If validation reports a `conflict`, do not publish it silently: compare the
+  cited source documents, record the resolution in a query/synthesis page or
+  revise the extraction, then validate again.
 - If a source or page is uncertain, record a query or synthesis page and state
   the uncertainty instead of inventing a relation.
