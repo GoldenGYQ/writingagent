@@ -58,6 +58,7 @@ import {
 } from "@/components/ui/tooltip";
 import {
   WorkspaceAccessMenu,
+  WorkspaceExecutionPolicyMenu,
   WorkspaceProjectPicker,
 } from "@/components/thread/WorkspaceControls";
 import {
@@ -81,6 +82,8 @@ import { useVoiceRecorder, type VoiceRecorderErrorKey } from "@/hooks/useVoiceRe
 import type {
   CliAppInfo,
   GoalStateWsPayload,
+  FileCitation,
+  KnowledgeProjectSummary,
   McpPresetInfo,
   OutboundCliAppMention,
   OutboundMcpPresetMention,
@@ -200,8 +203,13 @@ interface ThreadComposerProps {
   transcriptionProvider?: string | null;
   ingressLimits?: WebUIIngressLimits | null;
   quotedContext?: string | null;
+  fileCitation?: FileCitation | null;
   focusRequest?: number;
   onQuotedContextChange?: (text: string | null) => void;
+  onFileCitationChange?: (citation: FileCitation | null) => void;
+  knowledgeProjects?: KnowledgeProjectSummary[];
+  knowledgeProjectId?: string | null;
+  onKnowledgeProjectChange?: (id: string | null) => void;
 }
 
 const COMMAND_ICONS: Record<string, LucideIcon> = {
@@ -279,6 +287,7 @@ interface QueuedPrompt {
   text: string;
   images?: QueuedPromptImage[];
   quotedContext?: string;
+  fileCitation?: FileCitation;
 }
 
 interface QueuedPromptImage {
@@ -382,6 +391,14 @@ function normalizeQueuedPrompt(item: unknown, index: number): QueuedPrompt | nul
   const quotedContext = typeof record.quotedContext === "string"
     ? record.quotedContext.trim().slice(0, QUEUED_PROMPT_MAX_CHARS)
     : "";
+  const rawCitation = record.fileCitation;
+  const fileCitation = rawCitation && typeof rawCitation === "object"
+    && typeof rawCitation.path === "string"
+    && typeof rawCitation.start_line === "number"
+    && typeof rawCitation.end_line === "number"
+    && typeof rawCitation.quote === "string"
+    ? rawCitation
+    : undefined;
   if (!text && images.length === 0) return null;
   const id = typeof record.id === "string" && record.id.trim()
     ? record.id
@@ -391,6 +408,7 @@ function normalizeQueuedPrompt(item: unknown, index: number): QueuedPrompt | nul
     text,
     ...(images.length > 0 ? { images } : {}),
     ...(quotedContext ? { quotedContext } : {}),
+    ...(fileCitation ? { fileCitation } : {}),
   };
 }
 
@@ -848,8 +866,13 @@ export function ThreadComposer({
   transcriptionProvider = null,
   ingressLimits = null,
   quotedContext = null,
+  fileCitation = null,
   focusRequest = 0,
   onQuotedContextChange,
+  onFileCitationChange,
+  knowledgeProjects = [],
+  knowledgeProjectId = null,
+  onKnowledgeProjectChange,
 }: ThreadComposerProps) {
   const { t } = useTranslation();
   const [value, setValue] = useState("");
@@ -887,6 +910,7 @@ export function ThreadComposer({
     && !!workspaceDefaultScope
     && !!onWorkspaceScopeChange
     && workspaceControls?.can_change_project !== false;
+  const showKnowledgePicker = knowledgeProjects.length > 0 && !!onKnowledgeProjectChange;
 
   useEffect(() => {
     secondEnterPromptIdRef.current = null;
@@ -1504,17 +1528,21 @@ export function ThreadComposer({
         text,
         ...(queuedImages.length > 0 ? { images: queuedImages } : {}),
         ...(normalizedQuotedContext ? { quotedContext: normalizedQuotedContext } : {}),
+        ...(fileCitation ? { fileCitation } : {}),
       },
     ]);
     clear();
     clearComposerText();
     onQuotedContextChange?.(null);
+    onFileCitationChange?.(null);
   }, [
     canQueueGuidance,
     clear,
     clearComposerText,
+    fileCitation,
     maxTextBytes,
     normalizedQuotedContext,
+    onFileCitationChange,
     onQuotedContextChange,
     readyImages,
     textTooLargeMessage,
@@ -1536,6 +1564,7 @@ export function ThreadComposer({
     setCliAppMenuDismissed(false);
     setCursorPosition(prompt.text.length);
     onQuotedContextChange?.(prompt.quotedContext ?? null);
+    onFileCitationChange?.(prompt.fileCitation ?? null);
     if (prompt.images?.length) {
       restoreReadyImages(prompt.images as RestoredReadyImage[]);
     } else {
@@ -1548,7 +1577,13 @@ export function ThreadComposer({
       el.focus();
       el.setSelectionRange(prompt.text.length, prompt.text.length);
     });
-  }, [clear, onQuotedContextChange, resizeTextarea, restoreReadyImages]);
+  }, [
+    clear,
+    onFileCitationChange,
+    onQuotedContextChange,
+    resizeTextarea,
+    restoreReadyImages,
+  ]);
 
   const moveQueuedPrompt = useCallback((dragId: string, targetId: string) => {
     if (dragId === targetId) return;
@@ -1571,9 +1606,10 @@ export function ThreadComposer({
       const queuedImages = queuedImagesToSendImages(prompt.images);
       setQueuedPrompts((items) => items.filter((item) => item.id !== prompt.id));
       if (text || queuedImages?.length) {
-        const options: SendOptions | undefined = prompt.quotedContext || isStreaming
+        const options: SendOptions | undefined = prompt.quotedContext || prompt.fileCitation || isStreaming
           ? {
               ...(prompt.quotedContext ? { quotedContext: prompt.quotedContext } : {}),
+              ...(prompt.fileCitation ? { fileCitation: prompt.fileCitation } : {}),
               ...(isStreaming ? { continueActiveTurn: true } : {}),
             }
           : undefined;
@@ -1593,8 +1629,11 @@ export function ThreadComposer({
     }
     setQueuedPrompts((items) => items.filter((item) => item.id !== nextPrompt.id));
     const queuedImages = queuedImagesToSendImages(nextPrompt.images);
-    const options = nextPrompt.quotedContext
-      ? { quotedContext: nextPrompt.quotedContext }
+    const options = nextPrompt.quotedContext || nextPrompt.fileCitation
+      ? {
+          ...(nextPrompt.quotedContext ? { quotedContext: nextPrompt.quotedContext } : {}),
+          ...(nextPrompt.fileCitation ? { fileCitation: nextPrompt.fileCitation } : {}),
+        }
       : undefined;
     if (queuedImages?.length && options) onSend(nextPrompt.text.trim(), queuedImages, options);
     else if (queuedImages?.length) onSend(nextPrompt.text.trim(), queuedImages);
@@ -1652,11 +1691,17 @@ export function ThreadComposer({
     const attachedCliApps = activeCliMentionApps.map(cliAppMentionPayload);
     const attachedMcpPresets = activeMcpPresetMentions.map(mcpPresetMentionPayload);
     const options: SendOptions | undefined =
-      attachedCliApps.length > 0 || attachedMcpPresets.length > 0 || normalizedQuotedContext
+      attachedCliApps.length > 0
+      || attachedMcpPresets.length > 0
+      || normalizedQuotedContext
+      || fileCitation
+      || knowledgeProjectId
         ? {
             ...(attachedCliApps.length > 0 ? { cliApps: attachedCliApps } : {}),
             ...(attachedMcpPresets.length > 0 ? { mcpPresets: attachedMcpPresets } : {}),
             ...(normalizedQuotedContext ? { quotedContext: normalizedQuotedContext } : {}),
+            ...(fileCitation ? { fileCitation } : {}),
+            ...(knowledgeProjectId ? { knowledgeProjectId } : {}),
           }
         : undefined;
     const hasPlainTextCommandPayload =
@@ -1676,6 +1721,7 @@ export function ThreadComposer({
       clear();
       clearComposerText();
       onQuotedContextChange?.(null);
+      onFileCitationChange?.(null);
       return;
     }
     const isSlashSideChannel = isSideChannelLifecycle(slashLifecycle);
@@ -1698,6 +1744,7 @@ export function ThreadComposer({
     clear();
     clearComposerText();
     onQuotedContextChange?.(null);
+    onFileCitationChange?.(null);
   }, [
     activeCliMentionApps,
     activeMcpPresetMentions,
@@ -1712,7 +1759,10 @@ export function ThreadComposer({
     onSend,
     onStop,
     onQuotedContextChange,
+    onFileCitationChange,
     normalizedQuotedContext,
+    fileCitation,
+    knowledgeProjectId,
     readyImages,
     slashCommands,
     textTooLargeMessage,
@@ -1973,6 +2023,11 @@ export function ThreadComposer({
             <Quote className="mt-0.5 h-3.5 w-3.5 shrink-0" aria-hidden />
             <p className="line-clamp-2 min-w-0 flex-1 text-[13px]/[1.45]">
               {normalizedQuotedContext}
+              {fileCitation ? (
+                <span className="mt-0.5 block truncate text-[10px] text-muted-foreground/75" title={fileCitation.path}>
+                  {fileCitation.path}:L{fileCitation.start_line}-{fileCitation.end_line}
+                </span>
+              ) : null}
             </p>
             <button
               type="button"
@@ -2090,13 +2145,41 @@ export function ThreadComposer({
                 levels={voiceRecorder.levels}
               />
             ) : workspaceScope ? (
-              <WorkspaceAccessMenu
-                scope={workspaceScope}
-                disabled={disabled || workspaceScopeDisabled}
-                canUseFullAccess={workspaceControls?.can_use_full_access !== false}
-                isHero={isHero}
-                onChange={onWorkspaceScopeChange}
-              />
+              <>
+                <WorkspaceAccessMenu
+                  scope={workspaceScope}
+                  disabled={disabled || workspaceScopeDisabled}
+                  canUseFullAccess={workspaceControls?.can_use_full_access !== false}
+                  isHero={isHero}
+                  onChange={onWorkspaceScopeChange}
+                />
+                <WorkspaceExecutionPolicyMenu
+                  scope={workspaceScope}
+                  disabled={disabled || workspaceScopeDisabled}
+                  isHero={isHero}
+                  onChange={onWorkspaceScopeChange}
+                />
+              </>
+            ) : null}
+            {showKnowledgePicker ? (
+              <label className="flex min-w-0 items-center gap-1.5 rounded-full border border-border/55 bg-card px-2 py-1 text-[11px] text-muted-foreground shadow-[0_2px_8px_rgba(15,23,42,0.05)]">
+                <BookOpen className="h-3.5 w-3.5 shrink-0" aria-hidden />
+                <span className="sr-only">Knowledge wiki</span>
+                <select
+                  aria-label="Knowledge wiki"
+                  value={knowledgeProjectId ?? ""}
+                  disabled={disabled}
+                  onChange={(event) => onKnowledgeProjectChange?.(event.target.value || null)}
+                  className="max-w-[170px] min-w-0 cursor-pointer bg-transparent text-[11px] text-foreground outline-none"
+                >
+                  <option value="">No wiki</option>
+                  {knowledgeProjects.map((project) => (
+                    <option key={project.id} value={project.id}>
+                      {project.title}
+                    </option>
+                  ))}
+                </select>
+              </label>
             ) : null}
           </div>
           <div

@@ -22,11 +22,14 @@ from nanobot.bus.events import OUTBOUND_META_AGENT_UI, OutboundMessage
 from nanobot.bus.outbound_events import (
     GoalStateSyncEvent,
     GoalStatusEvent,
+    InteractionStateSyncEvent,
     ProgressEvent,
     RuntimeModelUpdatedEvent,
     SessionUpdatedEvent,
     TurnEndEvent,
     TurnModelUpdatedEvent,
+    WorkingPlanSyncEvent,
+    WritingArtifactSyncEvent,
     outbound_event_from_message,
     outbound_message_for_event,
 )
@@ -34,16 +37,26 @@ from nanobot.bus.queue import MessageBus
 from nanobot.channels.base import BaseChannel
 from nanobot.command.builtin import builtin_command_starts_agent_turn
 from nanobot.config.schema import Base
+from nanobot.knowledge.context import KNOWLEDGE_PROJECT_ID_METADATA
 from nanobot.runtime_context import (
     RUNTIME_CONTEXT_INPUT_META,
+    WEBUI_FILE_CITATION_METADATA,
     WEBUI_QUOTE_METADATA,
+    normalize_webui_file_citation,
+    webui_file_citation_runtime_context,
     webui_quote_runtime_context,
 )
 from nanobot.security.workspace_access import (
     WORKSPACE_SCOPE_METADATA_KEY,
     WorkspaceScopeError,
 )
+from nanobot.security.workspace_policy import WorkspaceBoundaryError, resolve_allowed_path
 from nanobot.session.goal_state import goal_state_ws_blob
+from nanobot.session.interaction_state import (
+    interaction_ws_blob,
+    pending_interaction,
+    resolve_interaction,
+)
 from nanobot.session.webui_turns import (
     clear_websocket_turn_if_current,
     mark_websocket_turn_transcript_persistence_failed,
@@ -52,6 +65,7 @@ from nanobot.session.webui_turns import (
     websocket_turn_transcript_persistence_failed,
     websocket_turn_wall_started_at,
 )
+from nanobot.session.working_plan import working_plan_ws_blob
 from nanobot.webui.cli_apps_api import normalize_cli_app_mentions
 from nanobot.webui.forking import handle_webui_fork_chat
 from nanobot.webui.gateway_services import GatewayServices
@@ -357,6 +371,17 @@ class WebSocketChannel(BaseChannel):
             return
         await self.send_goal_state(chat_id, blob)
 
+    async def _maybe_push_working_state(self, chat_id: str) -> None:
+        if self.gateway.session_manager is None:
+            return
+        row = self.gateway.session_manager.read_session_file(f"websocket:{chat_id}")
+        metadata = row.get("metadata") if isinstance(row, dict) else None
+        if not isinstance(metadata, dict):
+            return
+        typed_metadata = cast(dict[str, Any], metadata)
+        await self.send_working_plan(chat_id, working_plan_ws_blob(typed_metadata))
+        await self.send_interaction_state(chat_id, interaction_ws_blob(typed_metadata))
+
     async def _maybe_push_turn_run_wall_clock(self, chat_id: str) -> None:
         """Replay ``goal_status: running`` when a turn is still active (same-process refresh)."""
         t0 = websocket_turn_wall_started_at(chat_id)
@@ -372,6 +397,7 @@ class WebSocketChannel(BaseChannel):
     async def _hydrate_after_subscribe(self, chat_id: str) -> None:
         """Replay persisted or actively running per-chat state after subscribe."""
         await self._maybe_push_active_goal_state(chat_id)
+        await self._maybe_push_working_state(chat_id)
         await self._maybe_push_turn_run_wall_clock(chat_id)
 
     async def _send_event(
@@ -686,6 +712,60 @@ class WebSocketChannel(BaseChannel):
             event, payload = await webui_transcription_event(envelope)
             await self._send_event(connection, event, **payload)
             return
+        if t == "interaction_response":
+            cid = envelope.get("chat_id")
+            interaction_id = envelope.get("interaction_id")
+            action = envelope.get("action")
+            values = envelope.get("values", {})
+            if not _is_valid_chat_id(cid) or not isinstance(interaction_id, str):
+                await self._send_event(connection, "error", detail="invalid interaction response")
+                return
+            if not self.is_allowed(client_id):
+                await self._send_event(connection, "error", detail="access_denied", chat_id=cid)
+                return
+            if not isinstance(action, str) or not isinstance(values, dict):
+                await self._send_event(connection, "error", detail="invalid interaction values", chat_id=cid)
+                return
+            manager = self.gateway.session_manager
+            if manager is None:
+                await self._send_event(connection, "error", detail="session manager unavailable", chat_id=cid)
+                return
+            session = manager.get_or_create(f"websocket:{cid}")
+            try:
+                resolved = resolve_interaction(
+                    session.metadata,
+                    interaction_id=interaction_id,
+                    action=action,
+                    values=cast(dict[str, Any], values),
+                )
+                manager.save(session)
+            except ValueError as exc:
+                await self._send_event(connection, "error", detail=str(exc), chat_id=cid)
+                return
+            await self.send_interaction_state(cid, interaction_ws_blob(session.metadata))
+            await self.send_working_plan(cid, working_plan_ws_blob(session.metadata))
+            await self._send_event(connection, "interaction_accepted", chat_id=cid, interaction_id=interaction_id)
+            response_text = json.dumps(
+                {
+                    "interaction_id": interaction_id,
+                    "reason": resolved.get("reason"),
+                    "action": action,
+                    "values": values,
+                },
+                ensure_ascii=False,
+            )
+            await self._handle_message(
+                sender_id=client_id,
+                chat_id=cid,
+                content=f"[Structured user input]\n{response_text}",
+                metadata={
+                    "webui": True,
+                    "interaction_response": True,
+                    "interaction_id": interaction_id,
+                },
+                is_dm=False,
+            )
+            return
         if t == "message":
             cid = envelope.get("chat_id")
             content = envelope.get("content")
@@ -718,6 +798,19 @@ class WebSocketChannel(BaseChannel):
                     **rejection_fields,
                 )
                 return
+            manager = self.gateway.session_manager
+            if manager is not None:
+                session = manager.get_or_create(f"websocket:{cid}")
+                waiting = pending_interaction(session.metadata)
+                if waiting:
+                    await self._send_event(
+                        connection,
+                        "error",
+                        detail="interaction_response_required",
+                        chat_id=cid,
+                        interaction_id=waiting.get("id"),
+                    )
+                    return
             message_rejection = self._ingress.validate_text(content)
             if message_rejection is not None:
                 await self._send_event(
@@ -802,9 +895,28 @@ class WebSocketChannel(BaseChannel):
             mcp_presets = normalize_mcp_preset_mentions(envelope.get("mcp_presets"))
             if mcp_presets:
                 metadata["mcp_presets"] = mcp_presets
+            selected_knowledge = envelope.get("knowledge_project_id")
+            if isinstance(selected_knowledge, str) and selected_knowledge.strip():
+                metadata[KNOWLEDGE_PROJECT_ID_METADATA] = selected_knowledge.strip()[:128]
             metadata[WORKSPACE_SCOPE_METADATA_KEY] = scope.metadata()
             self._workspaces.persist_scope(cid, scope)
             is_webui = metadata.get("webui") is True
+            file_citation = None
+            if is_webui and connection in self._webui_connections:
+                candidate = normalize_webui_file_citation(envelope.get("file_citation"))
+                if candidate is not None:
+                    try:
+                        resolve_allowed_path(
+                            candidate["path"],
+                            workspace=scope.project_path,
+                            allowed_root=scope.project_path if scope.restrict_to_workspace else None,
+                            strict=False,
+                        )
+                    except (WorkspaceBoundaryError, OSError, ValueError):
+                        candidate = None
+                    file_citation = candidate
+                if file_citation is not None:
+                    metadata[WEBUI_FILE_CITATION_METADATA] = file_citation
             queued_owner = None
             if is_webui and builtin_command_starts_agent_turn(content):
                 queued_owner = register_queued_websocket_turn_if_idle(cid, turn_id)
@@ -820,6 +932,7 @@ class WebSocketChannel(BaseChannel):
                         media_paths=media_paths or None,
                         cli_apps=cli_apps or None,
                         mcp_presets=mcp_presets or None,
+                        file_citations=[file_citation] if file_citation is not None else None,
                     )
                 if is_webui and connection in self._webui_connections:
                     quote = webui_quote_runtime_context({
@@ -827,6 +940,9 @@ class WebSocketChannel(BaseChannel):
                     })
                     if quote is not None:
                         metadata[RUNTIME_CONTEXT_INPUT_META] = [quote]
+                    citation = webui_file_citation_runtime_context(metadata)
+                    if citation is not None:
+                        metadata.setdefault(RUNTIME_CONTEXT_INPUT_META, []).append(citation)
                 await self._handle_message(
                     sender_id=client_id,
                     chat_id=cid,
@@ -977,6 +1093,18 @@ class WebSocketChannel(BaseChannel):
         if isinstance(event, GoalStateSyncEvent):
             if conns:
                 await self.send_goal_state(msg.chat_id, event.goal_state or {"active": False})
+            return
+        if isinstance(event, WorkingPlanSyncEvent):
+            if conns:
+                await self.send_working_plan(msg.chat_id, event.working_plan)
+            return
+        if isinstance(event, InteractionStateSyncEvent):
+            if conns:
+                await self.send_interaction_state(msg.chat_id, event.interaction)
+            return
+        if isinstance(event, WritingArtifactSyncEvent):
+            if conns:
+                await self.send_writing_artifact(msg.chat_id, event.writing)
             return
         if isinstance(event, GoalStatusEvent):
             turn_id = (msg.metadata or {}).get(WEBUI_TURN_METADATA_KEY)
@@ -1276,6 +1404,33 @@ class WebSocketChannel(BaseChannel):
         raw = json.dumps(body, ensure_ascii=False)
         for connection in conns:
             await self._safe_send_to(connection, raw, label=" goal_state ")
+
+    async def send_working_plan(self, chat_id: str, blob: dict[str, Any]) -> None:
+        conns = list(self._subs.get(chat_id, ()))
+        if not conns:
+            return
+        raw = json.dumps({"event": "working_plan", "chat_id": chat_id, "working_plan": blob}, ensure_ascii=False)
+        for connection in conns:
+            await self._safe_send_to(connection, raw, label=" working_plan ")
+
+    async def send_interaction_state(self, chat_id: str, blob: dict[str, Any]) -> None:
+        conns = list(self._subs.get(chat_id, ()))
+        if not conns:
+            return
+        raw = json.dumps({"event": "interaction_state", "chat_id": chat_id, "interaction": blob}, ensure_ascii=False)
+        for connection in conns:
+            await self._safe_send_to(connection, raw, label=" interaction_state ")
+
+    async def send_writing_artifact(self, chat_id: str, blob: dict[str, Any]) -> None:
+        conns = list(self._subs.get(chat_id, ()))
+        if not conns:
+            return
+        raw = json.dumps(
+            {"event": "writing_artifact", "chat_id": chat_id, "writing": blob},
+            ensure_ascii=False,
+        )
+        for connection in conns:
+            await self._safe_send_to(connection, raw, label=" writing_artifact ")
 
     async def send_goal_status(
         self,

@@ -26,6 +26,7 @@ from websockets.http11 import Response
 from nanobot.command.builtin import builtin_command_palette
 from nanobot.cron.session_turns import is_bound_cron_job
 from nanobot.cron.types import CronJob, CronSchedule
+from nanobot.knowledge.store import KnowledgeStore
 from nanobot.runtime_context import public_history_messages
 from nanobot.triggers.local_types import LocalTrigger
 from nanobot.utils.subagent_channel_display import scrub_subagent_messages_for_channel
@@ -103,7 +104,10 @@ from nanobot.webui.skills_marketplace import (
 )
 from nanobot.webui.thread_disk import delete_webui_thread
 from nanobot.webui.transcript import build_webui_thread_response
+from nanobot.webui.workspace_tree import WorkspaceTreeError, workspace_tree_payload
 from nanobot.webui.workspaces import WebUIWorkspaceController
+from nanobot.writing.context import writing_context_raw, writing_runtime_snapshot
+from nanobot.writing.store import WritingStore
 
 _SLOW_WEBUI_HTTP_LOG_MS = 1_000
 _AUTOMATION_VALUES_HEADER = "X-Nanobot-Automation-Values"
@@ -406,6 +410,18 @@ class GatewayHTTPHandler:
         if m:
             return self._handle_file_preview(request, m.group(1))
 
+        m = re.match(r"^/api/sessions/([^/]+)/workspace-tree$", got)
+        if m:
+            return self._handle_workspace_tree(request, m.group(1))
+
+        m = re.match(r"^/api/sessions/([^/]+)/writing-runtime$", got)
+        if m:
+            return self._handle_writing_runtime(request, m.group(1))
+
+        m = re.match(r"^/api/sessions/([^/]+)/knowledge-projects$", got)
+        if m:
+            return self._handle_knowledge_projects(request, m.group(1))
+
         m = re.match(r"^/api/sessions/([^/]+)/automations$", got)
         if m:
             return self._handle_session_automations(request, m.group(1))
@@ -561,6 +577,75 @@ class GatewayHTTPHandler:
                 return _http_json_response({"available": False})
             return _http_error(e.status, e.message)
         return _http_json_response(payload)
+
+    def _handle_workspace_tree(self, request: WsRequest, key: str) -> Response:
+        if not self.check_api_token(request):
+            return _http_error(401, "Unauthorized")
+        decoded_key = _decode_api_key(key)
+        if decoded_key is None:
+            return _http_error(400, "invalid session key")
+        if not _is_websocket_channel_session_key(decoded_key):
+            return _http_error(404, "session not found")
+        query = _parse_query(request.path)
+        path = _query_first(query, "path")
+        raw_depth = _query_first(query, "depth")
+        raw_limit = _query_first(query, "limit")
+        try:
+            depth = int(raw_depth) if raw_depth is not None else 3
+            limit = int(raw_limit) if raw_limit is not None else 240
+        except ValueError:
+            return _http_error(400, "invalid workspace tree bounds")
+        try:
+            scope = self.workspaces.scope_for_session_key(decoded_key)
+            payload = workspace_tree_payload(path, scope=scope, depth=depth, limit=limit)
+        except WorkspaceTreeError as e:
+            return _http_error(e.status, e.message)
+        return _http_json_response(payload)
+
+    def _handle_writing_runtime(self, request: WsRequest, key: str) -> Response:
+        if not self.check_api_token(request):
+            return _http_error(401, "Unauthorized")
+        decoded_key = _decode_api_key(key)
+        if decoded_key is None:
+            return _http_error(400, "invalid session key")
+        if not _is_websocket_channel_session_key(decoded_key):
+            return _http_error(404, "session not found")
+        if self.session_manager is None:
+            return _http_error(503, "session manager unavailable")
+        session_data = self.session_manager.read_session_metadata(decoded_key) or {}
+        raw_metadata = session_data.get("metadata", {})
+        metadata = cast(dict[str, Any], raw_metadata) if isinstance(raw_metadata, dict) else {}
+        scope = self.workspaces.scope_for_session_key(decoded_key)
+        snapshot = writing_runtime_snapshot(
+            WritingStore(scope.project_path),
+            writing_context_raw(metadata),
+        )
+        return _http_json_response(snapshot)
+
+    def _handle_knowledge_projects(self, request: WsRequest, key: str) -> Response:
+        if not self.check_api_token(request):
+            return _http_error(401, "Unauthorized")
+        decoded_key = _decode_api_key(key)
+        if decoded_key is None:
+            return _http_error(400, "invalid session key")
+        if not _is_websocket_channel_session_key(decoded_key):
+            return _http_error(404, "session not found")
+        scope = self.workspaces.scope_for_session_key(decoded_key)
+        projects = KnowledgeStore(scope.project_path).list_projects()
+        return _http_json_response({
+            "projects": [
+                {
+                    "id": project.id,
+                    "title": project.title,
+                    "status": project.status,
+                    "phase": project.phase,
+                    "page_count": project.page_count,
+                    "source_count": len(project.sources),
+                    "updated_at": project.updated_at,
+                }
+                for project in projects[:100]
+            ],
+        })
 
     def _handle_session_automations(self, request: WsRequest, key: str) -> Response:
         if not self.check_api_token(request):

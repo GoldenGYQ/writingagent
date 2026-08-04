@@ -1,14 +1,19 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import type { PointerEvent as ReactPointerEvent } from "react";
 import { useTranslation } from "react-i18next";
+import { PanelRight } from "lucide-react";
 
 import { FilePreviewAvailabilityProvider } from "@/components/FilePreviewAvailabilityContext";
-import { FilePreviewPanel } from "@/components/FilePreviewPanel";
+import { DocumentWorkspacePanel } from "@/components/thread/DocumentWorkspacePanel";
 import { PromptNavigator } from "@/components/thread/PromptNavigator";
 import { SessionInfoPopover } from "@/components/thread/SessionInfoPopover";
 import { ThreadComposer } from "@/components/thread/ThreadComposer";
+import { InteractionRequestCard } from "@/components/thread/InteractionRequestCard";
+import { ChangeApprovalCard } from "@/components/thread/ChangeApprovalCard";
+import { WorkingPlanCard } from "@/components/thread/WorkingPlanCard";
 import type { ModelPresetOption } from "@/components/thread/ModelPresetBadge";
 import { ThreadHeader } from "@/components/thread/ThreadHeader";
+import { Button } from "@/components/ui/button";
 import { StreamErrorNotice } from "@/components/thread/StreamErrorNotice";
 import { ThreadViewport, type ThreadViewportHandle } from "@/components/thread/ThreadViewport";
 import { useNanobotStream, type SendAttachment, type SendOptions } from "@/hooks/useNanobotStream";
@@ -17,6 +22,7 @@ import {
   ApiError,
   fetchFilePreviewAvailability,
   fetchInstalledCliApps,
+  fetchKnowledgeProjects,
   fetchMcpPresets,
   fetchSettings,
   listSlashCommands,
@@ -35,6 +41,8 @@ import type { CanonicalRunSnapshot, StreamError } from "@/lib/nanobot-client";
 import { inferProviderFromModelName, providerDisplayLabel } from "@/lib/provider-brand";
 import type {
   ChatSummary,
+  FileCitation,
+  KnowledgeProjectSummary,
   SettingsPayload,
   SlashCommand,
   SkillSummary,
@@ -250,6 +258,14 @@ function completedAssistantTurnIds(messages: UIMessage[]): string[] {
       .filter((message) => message.role === "assistant" && !!message.turnId)
       .map((message) => message.turnId as string),
   ));
+}
+
+function workingPlanViewKey(plan: { id?: string; version?: number }): string {
+  return `${plan.id ?? "plan"}:${plan.version ?? 0}`;
+}
+
+function isTerminalWorkingPlan(status: string | undefined): boolean {
+  return status === "completed" || status === "cancelled";
 }
 
 function canonicalRunSnapshot(
@@ -637,12 +653,18 @@ export function ThreadShell({
     selectItems: installedMcpPresetsFromPayload,
   });
   const [settings, setSettings] = useState<SettingsPayload | null>(settingsSnapshot);
+  const [knowledgeProjects, setKnowledgeProjects] = useState<KnowledgeProjectSummary[]>([]);
+  const [knowledgeProjectId, setKnowledgeProjectId] = useState<string | null>(null);
   const [heroGreetingKey, setHeroGreetingKey] = useState(randomHeroGreetingKey);
   const [submittedViewportTurnId, setSubmittedViewportTurnId] = useState<string | null>(null);
   const [filePreviewPath, setFilePreviewPath] = useState<string | null>(null);
   const [filePreviewClosing, setFilePreviewClosing] = useState(false);
   const [filePreviewWidth, setFilePreviewWidth] = useState(FILE_PREVIEW_DEFAULT_WIDTH);
   const [quotedContext, setQuotedContext] = useState<string | null>(null);
+  const [fileCitation, setFileCitation] = useState<FileCitation | null>(null);
+  const [dismissedWorkingPlanKeys, setDismissedWorkingPlanKeys] = useState<Set<string>>(
+    () => new Set(),
+  );
   const [composerFocusSignal, setComposerFocusSignal] = useState(0);
   const shellRef = useRef<HTMLElement | null>(null);
   const filePreviewWidthRef = useRef(FILE_PREVIEW_DEFAULT_WIDTH);
@@ -675,14 +697,29 @@ export function ThreadShell({
     if (chatId) activeViewportTurnByChatIdRef.current.delete(chatId);
     setSubmittedViewportTurnId(null);
     setFallbackModelName(null);
+    if (historyKey) {
+      void fetchKnowledgeProjects(getToken(), historyKey)
+        .then((payload) => {
+          const projects = Array.isArray(payload.projects) ? payload.projects : [];
+          setKnowledgeProjects(projects);
+          setKnowledgeProjectId((current) =>
+            current && projects.some((project) => project.id === current) ? current : null,
+          );
+        })
+        .catch(() => {});
+    }
     onTurnEnd?.();
-  }, [chatId, onTurnEnd]);
+  }, [chatId, getToken, historyKey, onTurnEnd]);
   const {
     messages,
     messagesReady,
     isStreaming,
     runStartedAt,
     goalState,
+    workingPlan,
+    interactionRequest,
+    writingRuntime,
+    respondToInteraction,
     send,
     transcribeAudio,
     stop,
@@ -721,11 +758,19 @@ export function ThreadShell({
     setFilePreviewClosing(false);
     setFilePreviewPath(null);
     setQuotedContext(null);
+    setFileCitation(null);
     setSubmittedViewportTurnId(null);
   }, [historyKey]);
 
   const handleQuoteSelection = useCallback((text: string) => {
     setQuotedContext(text);
+    setFileCitation(null);
+    setComposerFocusSignal((value) => value + 1);
+  }, []);
+
+  const handleFileCitation = useCallback((citation: FileCitation) => {
+    setQuotedContext(citation.quote);
+    setFileCitation(citation);
     setComposerFocusSignal((value) => value + 1);
   }, []);
 
@@ -740,6 +785,15 @@ export function ThreadShell({
   const displayMessages = useMemo(() => projectWebuiThreadMessages(messages), [messages]);
   const currentRunStartedAt = messagesReady ? runStartedAt : null;
   const currentGoalState = messagesReady ? goalState : undefined;
+  const currentWorkingPlan = messagesReady ? workingPlan : undefined;
+  const currentInteraction = messagesReady ? interactionRequest : undefined;
+  const currentWorkingPlanKey = currentWorkingPlan?.id
+    ? workingPlanViewKey(currentWorkingPlan)
+    : null;
+  const visibleWorkingPlan = currentWorkingPlanKey
+    && !dismissedWorkingPlanKeys.has(currentWorkingPlanKey)
+    ? currentWorkingPlan
+    : undefined;
   const turnActive = messagesReady && (isStreaming || currentRunStartedAt !== null);
   const restoredViewportTurnId = useMemo(
     () => turnActive ? latestActiveTurnId(displayMessages) : null,
@@ -1212,6 +1266,35 @@ export function ThreadShell({
     };
   }, [getToken]);
 
+  useEffect(() => {
+    let cancelled = false;
+    if (!historyKey) {
+      setKnowledgeProjects([]);
+      setKnowledgeProjectId(null);
+      return () => {
+        cancelled = true;
+      };
+    }
+    void fetchKnowledgeProjects(getToken(), historyKey)
+      .then((payload) => {
+        if (cancelled) return;
+        const projects = Array.isArray(payload.projects) ? payload.projects : [];
+        setKnowledgeProjects(projects);
+        setKnowledgeProjectId((current) =>
+          current && projects.some((project) => project.id === current) ? current : null,
+        );
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setKnowledgeProjects([]);
+          setKnowledgeProjectId(null);
+        }
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [getToken, historyKey, workspaceScope?.project_path]);
+
   const handleWelcomeSend = useCallback(
     async (content: string, images?: SendAttachment[], options?: SendOptions) => {
       if (booting) return;
@@ -1237,12 +1320,24 @@ export function ThreadShell({
     (content: string, images?: SendAttachment[], options?: SendOptions) => {
       setFallbackModelName(null);
       const submitted = send(content, images, withWorkspaceScope(options));
+      if (
+        submitted
+        && !submitted.sideChannel
+        && currentWorkingPlanKey
+        && isTerminalWorkingPlan(currentWorkingPlan?.status)
+      ) {
+        setDismissedWorkingPlanKeys((current) => {
+          const next = new Set(current);
+          next.add(currentWorkingPlanKey);
+          return next;
+        });
+      }
       if (chatId && submitted && !submitted.sideChannel) {
         activeViewportTurnByChatIdRef.current.set(chatId, submitted.turnId);
         setSubmittedViewportTurnId(submitted.turnId);
       }
     },
-    [chatId, send, withWorkspaceScope],
+    [chatId, currentWorkingPlan?.status, currentWorkingPlanKey, send, withWorkspaceScope],
   );
 
   const handleOpenFilePreview = useCallback((path: string) => {
@@ -1263,6 +1358,14 @@ export function ThreadShell({
       setFilePreviewClosing(false);
     }, FILE_PREVIEW_CLOSE_ANIMATION_MS);
   }, [filePreviewClosing, filePreviewPath]);
+
+  const handleSelectWorkspacePath = useCallback((path: string) => {
+    if (!path) {
+      handleCloseFilePreview();
+      return;
+    }
+    handleOpenFilePreview(path);
+  }, [handleCloseFilePreview, handleOpenFilePreview]);
 
   const handleFilePreviewResizeStart = useCallback((event: ReactPointerEvent<HTMLButtonElement>) => {
     event.preventDefault();
@@ -1353,10 +1456,29 @@ export function ThreadShell({
           onDismiss={dismissStreamError}
         />
       ) : null}
+      {currentInteraction?.pending ? (
+        currentInteraction.kind === "change_approval" ? (
+          <ChangeApprovalCard request={currentInteraction} onRespond={respondToInteraction} />
+        ) : (
+          <InteractionRequestCard request={currentInteraction} onRespond={respondToInteraction} />
+        )
+      ) : null}
+      {visibleWorkingPlan?.id && currentWorkingPlanKey ? (
+        <WorkingPlanCard
+          plan={visibleWorkingPlan}
+          onDismiss={() => {
+            setDismissedWorkingPlanKeys((current) => {
+              const next = new Set(current);
+              next.add(currentWorkingPlanKey);
+              return next;
+            });
+          }}
+        />
+      ) : null}
       {session ? (
         <ThreadComposer
           onSend={handleThreadSend}
-          disabled={!chatId}
+          disabled={!chatId || currentInteraction?.pending === true}
           isStreaming={turnActive}
           placeholder={
             showHeroComposer
@@ -1392,13 +1514,18 @@ export function ThreadShell({
           transcriptionProvider={settingsSnapshot?.transcription?.provider}
           ingressLimits={ingressLimits}
           quotedContext={quotedContext}
+          fileCitation={fileCitation}
           focusRequest={composerFocusSignal}
           onQuotedContextChange={setQuotedContext}
+          onFileCitationChange={setFileCitation}
+          knowledgeProjects={knowledgeProjects}
+          knowledgeProjectId={knowledgeProjectId}
+          onKnowledgeProjectChange={setKnowledgeProjectId}
         />
       ) : (
         <ThreadComposer
           onSend={handleWelcomeSend}
-          disabled={booting}
+          disabled={booting || currentInteraction?.pending === true}
           isStreaming={turnActive}
           placeholder={
             booting
@@ -1431,6 +1558,11 @@ export function ThreadShell({
           onWorkspaceScopeChange={onWorkspaceScopeChange}
           transcriptionProvider={settingsSnapshot?.transcription?.provider}
           ingressLimits={ingressLimits}
+          fileCitation={fileCitation}
+          onFileCitationChange={setFileCitation}
+          knowledgeProjects={knowledgeProjects}
+          knowledgeProjectId={knowledgeProjectId}
+          onKnowledgeProjectChange={setKnowledgeProjectId}
         />
       )}
     </>
@@ -1454,6 +1586,18 @@ export function ThreadShell({
       onJumpToPrompt={(promptId) => viewportRef.current?.jumpToUserPrompt(promptId)}
     />
   ) : undefined;
+  const workspaceAction = historyKey ? (
+    <Button
+      variant="ghost"
+      size="icon"
+      className="h-8 w-8 rounded-full text-muted-foreground/85 hover:bg-accent/40 hover:text-foreground"
+      aria-label={t("thread.workspace.toggle")}
+      aria-pressed={Boolean(filePreviewPath)}
+      onClick={() => (filePreviewPath ? handleCloseFilePreview() : handleOpenFilePreview("."))}
+    >
+      <PanelRight className="h-3.5 w-3.5" aria-hidden />
+    </Button>
+  ) : undefined;
 
   return (
     <section ref={shellRef} className="relative flex min-h-0 flex-1 overflow-hidden">
@@ -1470,6 +1614,7 @@ export function ThreadShell({
             minimal={!session && !loading}
             promptNavigatorAction={promptNavigatorAction}
             sessionInfoAction={sessionInfoAction}
+            workspaceAction={workspaceAction}
           />
         ) : null}
         <FilePreviewAvailabilityProvider
@@ -1501,14 +1646,18 @@ export function ThreadShell({
         </FilePreviewAvailabilityProvider>
       </div>
       {filePreviewPath && historyKey ? (
-        <FilePreviewPanel
+        <DocumentWorkspacePanel
           sessionKey={historyKey}
-          path={filePreviewPath}
           token={token}
+          selectedPath={filePreviewPath === "." ? null : filePreviewPath}
           desktopWidth={filePreviewWidth}
           isClosing={filePreviewClosing}
+          recentEdits={displayMessages.flatMap((message) => message.fileEdits ?? [])}
+          writingRuntime={writingRuntime}
+          onSelectPath={handleSelectWorkspacePath}
           onResizeStart={handleFilePreviewResizeStart}
           onClose={handleCloseFilePreview}
+          onFileCitation={handleFileCitation}
         />
       ) : null}
     </section>

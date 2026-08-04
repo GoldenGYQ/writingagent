@@ -64,6 +64,8 @@ export interface UIMessage {
   cliApps?: UICliAppAttachment[];
   /** Settings-managed MCP presets explicitly attached to this user turn. */
   mcpPresets?: UIMcpPresetAttachment[];
+  /** Workspace source ranges explicitly cited in this user turn. */
+  fileCitations?: FileCitation[];
   /** Assistant turn: accumulated model reasoning / thinking text. Built up
    * incrementally from ``reasoning_delta`` frames; finalized when
    * ``reasoning_end`` arrives. */
@@ -273,6 +275,95 @@ export interface GoalStateWsPayload {
   objective?: string;
 }
 
+export interface FileCitation {
+  path: string;
+  start_line: number;
+  end_line: number;
+  quote: string;
+}
+
+export type WorkingPlanStepStatus = "pending" | "in_progress" | "completed" | "blocked" | "skipped";
+
+export interface WorkingPlanStep {
+  id: string;
+  title: string;
+  description?: string | null;
+  status: WorkingPlanStepStatus;
+}
+
+export interface WorkingPlanPayload {
+  active?: boolean;
+  id?: string;
+  version?: number;
+  kind?: "general" | "writing" | string;
+  status?: "draft" | "active" | "waiting_for_user" | "completed" | "cancelled" | string;
+  title?: string;
+  objective?: string;
+  steps?: WorkingPlanStep[];
+}
+
+export interface WritingRuntimePayload {
+  active: boolean;
+  context?: {
+    project_id?: string;
+    document_id?: string;
+    chapter_id?: string;
+    revision_id?: string;
+  };
+  project?: Record<string, unknown> | null;
+  document?: Record<string, unknown> | null;
+  artifact?: Record<string, unknown> | null;
+  chapter?: Record<string, unknown> | null;
+  changeset?: Record<string, unknown> | null;
+  revision?: Record<string, unknown> | null;
+  pending_changesets?: Array<Record<string, unknown>>;
+  open_reviews?: Array<Record<string, unknown>>;
+  revisions?: Array<Record<string, unknown>>;
+  error?: string;
+}
+
+export interface InteractionOption {
+  value: string;
+  label: string;
+  description?: string | null;
+}
+
+export interface InteractionField {
+  id: string;
+  type: "text" | "textarea" | "select" | "radio" | "checkbox" | "confirm";
+  label: string;
+  description?: string | null;
+  required: boolean;
+  options?: InteractionOption[] | null;
+}
+
+export interface InteractionRequestPayload {
+  pending: boolean;
+  id?: string;
+  status?: string;
+  kind?: "form" | "change_approval";
+  reason?: string;
+  title?: string;
+  prompt?: string;
+  fields?: InteractionField[];
+  actions?: Array<{ id: string; label: string; style: "primary" | "secondary" | "danger" }>;
+  plan_ref?: { id?: string; version?: number } | null;
+  change?: {
+    tool?: string;
+    added?: number;
+    deleted?: number;
+    files?: Array<{
+      path: string;
+      absolute_path?: string;
+      operation?: "create" | "update" | string;
+      added?: number;
+      deleted?: number;
+      binary?: boolean;
+      diff?: { format?: "unified" | string; text?: string; truncated?: boolean };
+    }>;
+  };
+}
+
 export interface ToolProgressEvent {
   version?: number;
   phase?: "start" | "end" | "error" | string;
@@ -328,12 +419,14 @@ export interface ChatSummary {
 }
 
 export type WorkspaceAccessMode = "restricted" | "full";
+export type WorkspaceExecutionPolicy = "read_only" | "ask" | "auto";
 export type WebuiDefaultAccessMode = "default" | "full";
 
 export interface WorkspaceScopePayload {
   project_path: string;
   project_name?: string;
   access_mode: WorkspaceAccessMode;
+  execution_policy?: WorkspaceExecutionPolicy;
   restrict_to_workspace?: boolean;
   sandbox_status?: {
     restrict_to_workspace: boolean;
@@ -1242,6 +1335,22 @@ export type InboundEvent =
       goal_state: GoalStateWsPayload;
     }
   | {
+      event: "working_plan";
+      chat_id: string;
+      working_plan: WorkingPlanPayload;
+    }
+  | {
+      event: "interaction_state";
+      chat_id: string;
+      interaction: InteractionRequestPayload;
+    }
+  | {
+      event: "writing_artifact";
+      chat_id: string;
+      writing: WritingRuntimePayload;
+    }
+  | { event: "interaction_accepted"; chat_id: string; interaction_id: string }
+  | {
       event: "session_updated";
       chat_id: string;
       scope?: "metadata" | "thread" | string;
@@ -1329,12 +1438,55 @@ export interface FilePreviewPayload {
   truncated: boolean;
 }
 
+export interface WorkspaceTreeNode {
+  name: string;
+  path: string;
+  kind: "directory" | "file" | string;
+  has_children?: boolean;
+  children?: WorkspaceTreeNode[];
+  language?: string;
+  size?: number;
+  modified_at?: string;
+  unreadable?: boolean;
+}
+
+export interface WorkspaceTreePayload {
+  root: string;
+  path: string;
+  depth: number;
+  limit: number;
+  truncated: boolean;
+  entries: WorkspaceTreeNode[];
+}
+
+/** Lightweight summaries used by the composer; page bodies stay server-side. */
+export interface KnowledgeProjectSummary {
+  id: string;
+  title: string;
+  status?: string;
+  phase?: string;
+  page_count?: number;
+  source_count?: number;
+  updated_at?: string;
+}
+
+export interface KnowledgeProjectsPayload {
+  projects: KnowledgeProjectSummary[];
+}
+
 export type Outbound =
   | { type: "new_chat"; workspace_scope?: WorkspaceScopePayload }
   | { type: "fork_chat"; source_chat_id: string; before_user_index: number; title?: string }
   | { type: "attach"; chat_id: string }
   | { type: "set_workspace_scope"; chat_id: string; workspace_scope: WorkspaceScopePayload }
   | { type: "transcribe_audio"; request_id: string; data_url: string; duration_ms?: number }
+  | {
+      type: "interaction_response";
+      chat_id: string;
+      interaction_id: string;
+      action: string;
+      values: Record<string, unknown>;
+    }
   | {
       type: "message";
       chat_id: string;
@@ -1343,6 +1495,8 @@ export type Outbound =
       cli_apps?: OutboundCliAppMention[];
       mcp_presets?: OutboundMcpPresetMention[];
       quoted_context?: string;
+      file_citation?: FileCitation;
+      knowledge_project_id?: string;
       workspace_scope?: WorkspaceScopePayload;
       turn_id?: string;
       /** Marks messages sent by the embedded WebUI, without changing the

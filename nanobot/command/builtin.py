@@ -113,6 +113,15 @@ BUILTIN_COMMAND_SPECS: tuple[BuiltinCommandSpec, ...] = (
         accepts_args=True,
     ),
     BuiltinCommandSpec(
+        "/knowledge",
+        "Start knowledge engineering",
+        "Scan source files and build a structured Knowledge wiki through the agent runtime.",
+        "book-open",
+        "<source-directory>",
+        lifecycle="agent_turn_with_args",
+        accepts_args=True,
+    ),
+    BuiltinCommandSpec(
         "/trigger",
         "Create named local trigger",
         "Create a named CLI trigger bound to this chat session.",
@@ -916,6 +925,42 @@ async def cmd_goal(ctx: CommandContext) -> OutboundMessage | None:
     return None
 
 
+async def cmd_knowledge(ctx: CommandContext) -> OutboundMessage | None:
+    """Start a Knowledge Runtime task without bypassing the Agent Runtime."""
+    source = ctx.args.strip()
+    if not source:
+        return OutboundMessage(
+            channel=ctx.msg.channel,
+            chat_id=ctx.msg.chat_id,
+            content="Usage: /knowledge <source-directory-relative-to-workspace>",
+            metadata={**dict(ctx.msg.metadata or {}), "render_as": "text"},
+        )
+    if ctx.session is None:
+        return OutboundMessage(
+            channel=ctx.msg.channel,
+            chat_id=ctx.msg.chat_id,
+            content="A Knowledge task needs an active chat session. Start a new chat and try again.",
+            metadata={**dict(ctx.msg.metadata or {}), "render_as": "text"},
+        )
+    if not ctx.is_user_turn:
+        return OutboundMessage(
+            channel=ctx.msg.channel,
+            chat_id=ctx.msg.chat_id,
+            content="Knowledge tasks can only be started by a user command.",
+            metadata={**dict(ctx.msg.metadata or {}), "render_as": "text"},
+        )
+    ctx.msg.metadata = {
+        **dict(ctx.msg.metadata or {}),
+        "knowledge_requested": source,
+        "original_command": "/knowledge",
+        "original_content": ctx.raw,
+    }
+    # Keep this as an Agent turn: the command only declares the task boundary;
+    # knowledge_scan/extract/compile remain observable tool calls.
+    ctx.msg.content = ctx.raw
+    return None
+
+
 async def cmd_pairing(ctx: CommandContext) -> OutboundMessage:
     """List, approve, deny or revoke pairing requests."""
     from nanobot.pairing import PAIRING_COMMAND_META_KEY, handle_pairing_command
@@ -1031,6 +1076,8 @@ def register_builtin_commands(router: CommandRouter) -> None:
     router.prefix("/history ", cmd_history)
     router.exact("/goal", cmd_goal)
     router.prefix("/goal ", cmd_goal)
+    router.exact("/knowledge", cmd_knowledge)
+    router.prefix("/knowledge ", cmd_knowledge)
     router.exact("/trigger", cmd_trigger)
     router.prefix("/trigger ", cmd_trigger)
     router.exact("/dream", cmd_dream)

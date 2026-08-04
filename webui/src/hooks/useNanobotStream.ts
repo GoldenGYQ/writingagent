@@ -17,6 +17,9 @@ import type {
   OutboundMcpPresetMention,
   OutboundMedia,
   GoalStateWsPayload,
+  FileCitation,
+  InteractionRequestPayload,
+  WritingRuntimePayload,
   MessageDeliveryStatus,
   ToolProgressEvent,
   UIMediaAttachment,
@@ -24,6 +27,7 @@ import type {
   UIMessage,
   UITurnPhase,
   WorkspaceScopePayload,
+  WorkingPlanPayload,
 } from "@/lib/types";
 
 interface StreamBuffer {
@@ -482,6 +486,8 @@ export interface SendOptions {
   cliApps?: OutboundCliAppMention[];
   mcpPresets?: OutboundMcpPresetMention[];
   quotedContext?: string;
+  fileCitation?: FileCitation;
+  knowledgeProjectId?: string | null;
   workspaceScope?: WorkspaceScopePayload | null;
   sideChannel?: boolean;
   finalizeActiveTurn?: boolean;
@@ -555,6 +561,10 @@ export function useNanobotStream(
   runStartedAt: number | null;
   /** Latest sustained goal for this ``chatId`` (``goal_state`` WS events). */
   goalState: GoalStateWsPayload | undefined;
+  workingPlan: WorkingPlanPayload | undefined;
+  interactionRequest: InteractionRequestPayload | undefined;
+  writingRuntime: WritingRuntimePayload | undefined;
+  respondToInteraction: (action: string, values: Record<string, unknown>) => void;
   send: (
     content: string,
     images?: SendAttachment[],
@@ -584,6 +594,9 @@ export function useNanobotStream(
   /** Unix epoch seconds when the current user turn started; cleared on ``idle``. */
   const [runStartedAt, setRunStartedAt] = useState<number | null>(initialRunStartedAt);
   const [goalState, setGoalState] = useState<GoalStateWsPayload | undefined>(undefined);
+  const [workingPlan, setWorkingPlan] = useState<WorkingPlanPayload | undefined>(undefined);
+  const [interactionRequest, setInteractionRequest] = useState<InteractionRequestPayload | undefined>(undefined);
+  const [writingRuntime, setWritingRuntime] = useState<WritingRuntimePayload | undefined>(undefined);
   const [streamError, setStreamError] = useState<StreamError | null>(null);
   const buffer = useRef<StreamBuffer | null>(null);
   const activeAssistantRef = useRef<ActiveAssistantCursor | null>(null);
@@ -983,6 +996,16 @@ export function useNanobotStream(
     setStreamError(null);
     setRunStartedAt(restoredRunStartedAt);
     setGoalState(chatId ? client.getGoalState(chatId) : undefined);
+    // Some embedders and older test doubles implement only the original
+    // client surface. Treat the new persisted snapshots as optional so the
+    // hook remains backwards-compatible while the live events still work.
+    const snapshotClient = client as typeof client & {
+      getWorkingPlan?: (id: string) => WorkingPlanPayload | undefined;
+      getInteraction?: (id: string) => InteractionRequestPayload | undefined;
+    };
+    setWorkingPlan(chatId ? snapshotClient.getWorkingPlan?.(chatId) : undefined);
+    setInteractionRequest(chatId ? snapshotClient.getInteraction?.(chatId) : undefined);
+    setWritingRuntime(undefined);
     buffer.current = null;
     activeAssistantRef.current = null;
     closedAssistantStreamIdsRef.current.clear();
@@ -1108,6 +1131,27 @@ export function useNanobotStream(
 
       if (ev.event === "goal_state") {
         setGoalState(ev.goal_state);
+        return;
+      }
+
+      if (ev.event === "working_plan") {
+        setWorkingPlan(ev.working_plan);
+        return;
+      }
+
+      if (ev.event === "interaction_state") {
+        setInteractionRequest(ev.interaction.pending ? ev.interaction : undefined);
+        setIsStreaming(false);
+        setRunStartedAt(null);
+        return;
+      }
+
+      if (ev.event === "writing_artifact") {
+        setWritingRuntime((current) => ({
+          ...current,
+          ...ev.writing,
+          context: { ...current?.context, ...ev.writing.context },
+        }));
         return;
       }
 
@@ -1418,6 +1462,7 @@ export function useNanobotStream(
             ...(previews ? { media: previews } : {}),
             ...(options?.cliApps?.length ? { cliApps: options.cliApps } : {}),
             ...(options?.mcpPresets?.length ? { mcpPresets: options.mcpPresets } : {}),
+            ...(options?.fileCitation ? { fileCitations: [options.fileCitation] } : {}),
           },
         ];
       });
@@ -1471,12 +1516,29 @@ export function useNanobotStream(
     [client],
   );
 
+  const respondToInteraction = useCallback((action: string, values: Record<string, unknown>) => {
+    if (!chatId || !interactionRequest?.id) return;
+    const interactionClient = client as typeof client & {
+      respondToInteraction?: (
+        id: string,
+        interactionId: string,
+        selectedAction: string,
+        fieldValues: Record<string, unknown>,
+      ) => void;
+    };
+    interactionClient.respondToInteraction?.(chatId, interactionRequest.id, action, values);
+  }, [chatId, client, interactionRequest?.id]);
+
   return {
     messages,
     messagesReady: messageOwnerChatId === chatId,
     isStreaming,
     runStartedAt,
     goalState,
+    workingPlan,
+    interactionRequest,
+    writingRuntime,
+    respondToInteraction,
     send,
     transcribeAudio,
     stop,

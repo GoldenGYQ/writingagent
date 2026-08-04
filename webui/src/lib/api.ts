@@ -8,6 +8,8 @@ import type {
   ChatSummary,
   CliAppsPayload,
   FilePreviewPayload,
+  KnowledgeProjectsPayload,
+  WorkspaceTreePayload,
   ImageGenerationSettingsUpdate,
   McpPresetsPayload,
   MarketplaceProvider,
@@ -40,6 +42,7 @@ import type {
   WorkspacesPayload,
   WebuiThreadPersistedPayload,
   WorkspaceScopePayload,
+  WritingRuntimePayload,
 } from "./types";
 import { fetchWithTimeout } from "./http";
 
@@ -233,6 +236,51 @@ export async function fetchFilePreviewAvailability(
     API_READ_TIMEOUT_MS,
   );
   return payload.available !== false;
+}
+
+export async function fetchWorkspaceTree(
+  token: string,
+  key: string,
+  options: { path?: string; depth?: number; limit?: number } = {},
+  base: string = "",
+): Promise<WorkspaceTreePayload> {
+  const query = new URLSearchParams();
+  if (options.path) query.set("path", options.path);
+  if (options.depth !== undefined) query.set("depth", String(options.depth));
+  if (options.limit !== undefined) query.set("limit", String(options.limit));
+  const suffix = query.toString() ? `?${query.toString()}` : "";
+  return request<WorkspaceTreePayload>(
+    `${base}/api/sessions/${encodeURIComponent(key)}/workspace-tree${suffix}`,
+    token,
+    undefined,
+    API_READ_TIMEOUT_MS,
+  );
+}
+
+export async function fetchWritingRuntime(
+  token: string,
+  key: string,
+  base: string = "",
+): Promise<WritingRuntimePayload> {
+  return request<WritingRuntimePayload>(
+    `${base}/api/sessions/${encodeURIComponent(key)}/writing-runtime`,
+    token,
+    undefined,
+    API_READ_TIMEOUT_MS,
+  );
+}
+
+export async function fetchKnowledgeProjects(
+  token: string,
+  key: string,
+  base: string = "",
+): Promise<KnowledgeProjectsPayload> {
+  return request<KnowledgeProjectsPayload>(
+    `${base}/api/sessions/${encodeURIComponent(key)}/knowledge-projects`,
+    token,
+    undefined,
+    API_READ_TIMEOUT_MS,
+  );
 }
 
 export async function fetchSessionAutomations(

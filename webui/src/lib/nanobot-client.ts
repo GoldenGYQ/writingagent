@@ -1,11 +1,14 @@
 import type {
   ConnectionStatus,
+  FileCitation,
   InboundEvent,
   Outbound,
   OutboundCliAppMention,
   OutboundMcpPresetMention,
   OutboundMedia,
   GoalStateWsPayload,
+  InteractionRequestPayload,
+  WorkingPlanPayload,
   WorkspaceScopePayload,
 } from "./types";
 import { createHostWebSocket } from "./runtime";
@@ -192,6 +195,8 @@ export class NanobotClient {
   private static readonly COMPLETED_TURN_FENCE_MAX = 256;
   /** Latest ``goal_state`` snapshot per ``chat_id`` (multi-session isolation). */
   private goalStateByChatId = new Map<string, GoalStateWsPayload>();
+  private workingPlanByChatId = new Map<string, WorkingPlanPayload>();
+  private interactionByChatId = new Map<string, InteractionRequestPayload>();
   private pendingNewChat: PendingRequest<string> | null = null;
   private pendingTranscriptions = new Map<string, PendingRequest<string>>();
   private pendingSystemCommands = new Map<string, PendingRequest<void>>();
@@ -476,6 +481,14 @@ export class NanobotClient {
   /** Last ``goal_state`` payload for *chatId*, if any frame has arrived this connection. */
   getGoalState(chatId: string): GoalStateWsPayload | undefined {
     return this.goalStateByChatId.get(chatId);
+  }
+
+  getWorkingPlan(chatId: string): WorkingPlanPayload | undefined {
+    return this.workingPlanByChatId.get(chatId);
+  }
+
+  getInteraction(chatId: string): InteractionRequestPayload | undefined {
+    return this.interactionByChatId.get(chatId);
   }
 
   private advanceRunGeneration(chatId: string, turnId?: string): void {
@@ -805,6 +818,8 @@ export class NanobotClient {
       cliApps?: OutboundCliAppMention[];
       mcpPresets?: OutboundMcpPresetMention[];
       quotedContext?: string;
+      fileCitation?: FileCitation;
+      knowledgeProjectId?: string | null;
       workspaceScope?: WorkspaceScopePayload | null;
       turnId?: string;
       /** False for side-channel or injected messages that do not own a lifecycle. */
@@ -820,6 +835,10 @@ export class NanobotClient {
       ...(options?.cliApps?.length ? { cli_apps: options.cliApps } : {}),
       ...(options?.mcpPresets?.length ? { mcp_presets: options.mcpPresets } : {}),
       ...(options?.quotedContext?.trim() ? { quoted_context: options.quotedContext.trim() } : {}),
+      ...(options?.fileCitation ? { file_citation: options.fileCitation } : {}),
+      ...(options?.knowledgeProjectId?.trim()
+        ? { knowledge_project_id: options.knowledgeProjectId.trim() }
+        : {}),
       ...(options?.workspaceScope ? { workspace_scope: options.workspaceScope } : {}),
       ...(options?.turnId ? { turn_id: options.turnId } : {}),
       webui: true,
@@ -853,6 +872,21 @@ export class NanobotClient {
       }, timeoutMs);
       this.pendingSystemCommands.set(turnId, { resolve, reject, timer });
       this.sendMessage(chatId, normalized, undefined, { turnId });
+    });
+  }
+
+  respondToInteraction(
+    chatId: string,
+    interactionId: string,
+    action: string,
+    values: Record<string, unknown>,
+  ): void {
+    this.queueSend({
+      type: "interaction_response",
+      chat_id: chatId,
+      interaction_id: interactionId,
+      action,
+      values,
     });
   }
 
@@ -1036,6 +1070,12 @@ export class NanobotClient {
       this.recordGoalStatusForRunStrip(chatId, parsed);
       if (supersededRunCompletion) return;
       this.recordGoalStateSnapshot(chatId, parsed);
+      if (parsed.event === "working_plan") {
+        this.workingPlanByChatId.set(chatId, parsed.working_plan);
+      }
+      if (parsed.event === "interaction_state") {
+        this.interactionByChatId.set(chatId, parsed.interaction);
+      }
       this.dispatch(chatId, parsed);
     }
   }
