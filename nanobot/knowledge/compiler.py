@@ -407,6 +407,33 @@ def validate_project(store: KnowledgeStore, project_id: str) -> dict[str, Any]:
     known_slugs: set[str] = set()
     source_paths = {source.relative_path for source in project.sources}
     issues.extend(_extraction_conflicts(store, project_id))
+    for ir in store.list_ir(project_id):
+        for relation in ir.relations:
+            if relation.source_path and source_paths and relation.source_path not in source_paths:
+                issues.append({
+                    "kind": "evidence",
+                    "path": f"knowledge/ir/{ir.source_path}",
+                    "message": f"unknown relation source evidence: {relation.source_path}",
+                })
+            has_start = relation.start_line is not None
+            has_end = relation.end_line is not None
+            if has_start != has_end:
+                issues.append({
+                    "kind": "evidence",
+                    "path": f"knowledge/ir/{ir.source_path}",
+                    "message": "relation evidence must include both start_line and end_line",
+                })
+            elif has_start and (
+                relation.start_line is None
+                or relation.end_line is None
+                or relation.start_line < 1
+                or relation.end_line < relation.start_line
+            ):
+                issues.append({
+                    "kind": "evidence",
+                    "path": f"knowledge/ir/{ir.source_path}",
+                    "message": "relation evidence line range is invalid",
+                })
     for path, content in pages:
         metadata, _ = parse_frontmatter(content)
         page_type = str(metadata.get("type") or "")

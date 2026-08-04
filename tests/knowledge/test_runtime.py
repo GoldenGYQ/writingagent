@@ -176,6 +176,50 @@ def test_source_page_keeps_reference_metadata_shape(tmp_path):
     assert service.validate(project_id)["passed"] is True
 
 
+def test_validate_rejects_invalid_relation_evidence_anchor(tmp_path):
+    source_root = _source_tree(tmp_path)
+    service = KnowledgeService(KnowledgeStore(tmp_path))
+    project_id = service.scan(str(source_root))["project"]["id"]
+    service.extract(
+        project_id,
+        "runtime.md",
+        pages=[{
+            "type": "concept",
+            "title": "Runtime",
+            "slug": "runtime",
+            "body": "The runtime coordinates tools.",
+        }],
+        relations=[{
+            "source": "runtime",
+            "target": "langgraph",
+            "relation": "implements",
+            "evidence": "The source describes the relationship.",
+            "source_path": "runtime.md",
+            "start_line": 8,
+            "end_line": 3,
+        }],
+    )
+    service.extract(
+        project_id,
+        "langgraph.md",
+        pages=[{
+            "type": "concept",
+            "title": "LangGraph",
+            "slug": "langgraph",
+            "body": "A graph-based framework.",
+        }],
+    )
+    service.compile(project_id)
+
+    validation = service.validate(project_id)
+
+    assert validation["passed"] is False
+    assert any(
+        issue["kind"] == "evidence" and "line range is invalid" in issue["message"]
+        for issue in validation["issues"]
+    )
+
+
 @pytest.mark.asyncio
 async def test_search_returns_bounded_source_linked_snippets(tmp_path):
     source_root = _source_tree(tmp_path)
