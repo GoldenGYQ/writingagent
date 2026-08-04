@@ -19,7 +19,7 @@ from nanobot.knowledge.models import (
     KnowledgeTask,
     new_id,
 )
-from nanobot.knowledge.store import KnowledgeStore, KnowledgeStoreError
+from nanobot.knowledge.store import KnowledgeNotFoundError, KnowledgeStore, KnowledgeStoreError
 
 _TEXT_EXTENSIONS = frozenset({
     ".md", ".markdown", ".txt", ".rst", ".py", ".js", ".ts", ".tsx", ".jsx",
@@ -45,7 +45,7 @@ class KnowledgeService:
         """Load or initialize the durable task associated with a project."""
         try:
             task = self.store.get_task(project.id)
-        except KnowledgeStoreError:
+        except KnowledgeNotFoundError:
             task = KnowledgeTask(
                 id=new_id("task"),
                 project_id=project.id,
