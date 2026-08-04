@@ -11,6 +11,7 @@ from nanobot.runtime_context import RuntimeContextBlock, wrap_runtime_context_li
 KNOWLEDGE_CONTEXT_KEY = "knowledge_context"
 KNOWLEDGE_REQUESTED_METADATA = "knowledge_requested"
 KNOWLEDGE_PROJECT_ID_METADATA = "knowledge_project_id"
+KNOWLEDGE_SOURCE_PENDING = "__select_source__"
 KNOWLEDGE_CITATIONS_KEY = "knowledge_citations"
 MAX_KNOWLEDGE_CONTEXT_CHARS = 4_000
 MAX_KNOWLEDGE_CITATIONS = 12
@@ -138,7 +139,12 @@ def knowledge_context_runtime_lines(
     if not project_id and not requested_source:
         return []
     lines = ["[Knowledge Runtime]"]
-    if requested_source:
+    if requested_source == KNOWLEDGE_SOURCE_PENDING:
+        lines.extend([
+            "Knowledge task requested without a source directory.",
+            "Ask the user for the source directory and schema before calling knowledge_scan.",
+        ])
+    elif requested_source:
         lines.extend([
             "Knowledge task requested by the user.",
             f"Source directory: {requested_source}",

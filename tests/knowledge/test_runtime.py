@@ -7,7 +7,11 @@ import pytest
 from nanobot.agent.tools.context import RequestContext, request_context
 from nanobot.agent.tools.knowledge import KnowledgeScanTool, KnowledgeSearchTool
 from nanobot.knowledge.compiler import parse_frontmatter
-from nanobot.knowledge.context import KnowledgeContextProvider, set_knowledge_context
+from nanobot.knowledge.context import (
+    KNOWLEDGE_SOURCE_PENDING,
+    KnowledgeContextProvider,
+    set_knowledge_context,
+)
 from nanobot.knowledge.service import KnowledgeService
 from nanobot.knowledge.store import KnowledgeStore, KnowledgeStoreError
 from nanobot.session.manager import SessionManager
@@ -326,3 +330,22 @@ async def test_knowledge_runtime_context_is_conditional_and_bounded(tmp_path):
     assert "Knowledge Task:" in block.content
     assert "[Working Plan Guidance]" not in block.content
     assert len(block.content) <= 4_000
+
+
+@pytest.mark.asyncio
+async def test_knowledge_runtime_context_guides_source_selection(tmp_path):
+    sessions = SessionManager(tmp_path)
+    provider = KnowledgeContextProvider(sessions)
+    request = RequestContext(
+        channel="websocket",
+        chat_id="chat-selection",
+        session_key="websocket:chat-selection",
+        workspace=tmp_path,
+        metadata={"knowledge_requested": KNOWLEDGE_SOURCE_PENDING},
+    )
+
+    block = await provider(request)
+
+    assert block is not None
+    assert "without a source directory" in block.content
+    assert "Ask the user for the source directory" in block.content

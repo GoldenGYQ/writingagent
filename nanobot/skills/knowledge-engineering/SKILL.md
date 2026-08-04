@@ -7,9 +7,10 @@ metadata: {"nanobot":{"emoji":"📚"}}
 # Knowledge Engineering
 
 Use this skill when the user asks to build, update, inspect, or cite a project
-knowledge base. `/knowledge <source-directory>` is an entry point into the
-normal Agent Runtime; it is not a hidden workflow. Keep tool calls observable
-in the timeline.
+knowledge base. `/knowledge [source-directory]` is an entry point into the
+normal Agent Runtime; it is not a hidden workflow. If the source directory is
+missing, use `request_user_input` to collect the source path and schema before
+calling `knowledge_scan`. Keep tool calls observable in the timeline.
 
 ## Required workflow
 

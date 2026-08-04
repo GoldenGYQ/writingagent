@@ -116,9 +116,9 @@ BUILTIN_COMMAND_SPECS: tuple[BuiltinCommandSpec, ...] = (
     BuiltinCommandSpec(
         "/knowledge",
         "Start knowledge engineering",
-        "Scan source files and build a structured Knowledge wiki through the agent runtime.",
+        "Start structured Knowledge engineering through the agent runtime.",
         "book-open",
-        "<source-directory>",
+        "[source-directory]",
         lifecycle="agent_turn_with_args",
         accepts_args=True,
     ),
@@ -929,15 +929,9 @@ async def cmd_goal(ctx: CommandContext) -> OutboundMessage | None:
 async def cmd_knowledge(ctx: CommandContext) -> OutboundMessage | None:
     """Initialize a Knowledge task without bypassing the Agent Runtime."""
     from nanobot.agent.goal_permission import goal_mutation_permission
+    from nanobot.knowledge.context import KNOWLEDGE_SOURCE_PENDING
 
     source = ctx.args.strip()
-    if not source:
-        return OutboundMessage(
-            channel=ctx.msg.channel,
-            chat_id=ctx.msg.chat_id,
-            content="Usage: /knowledge <source-directory-relative-to-workspace>",
-            metadata={**dict(ctx.msg.metadata or {}), "render_as": "text"},
-        )
     if ctx.session is None:
         return OutboundMessage(
             channel=ctx.msg.channel,
@@ -952,6 +946,23 @@ async def cmd_knowledge(ctx: CommandContext) -> OutboundMessage | None:
             content="Knowledge tasks can only be started by a user command.",
             metadata={**dict(ctx.msg.metadata or {}), "render_as": "text"},
         )
+
+    if not source:
+        # No-argument entry intentionally stays in the Agent Runtime.  The
+        # Skill can ask for source/schema with request_user_input rather than
+        # making the command layer own a hidden file-selection workflow.
+        ctx.turn_scopes.append(goal_mutation_permission(True))
+        ctx.msg.metadata = {
+            **dict(ctx.msg.metadata or {}),
+            "knowledge_requested": KNOWLEDGE_SOURCE_PENDING,
+            "knowledge_selection_pending": True,
+            "goal_requested": True,
+            "goal_domain": "knowledge",
+            "original_command": "/knowledge",
+            "original_content": ctx.raw,
+        }
+        ctx.msg.content = ctx.raw
+        return None
 
     # The command creates only the durable project/task boundary.  It must not
     # scan or extract sources here: those remain visible Agent Tool calls.
