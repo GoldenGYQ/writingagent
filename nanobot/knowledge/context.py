@@ -13,8 +13,8 @@ KNOWLEDGE_REQUESTED_METADATA = "knowledge_requested"
 KNOWLEDGE_PROJECT_ID_METADATA = "knowledge_project_id"
 KNOWLEDGE_CITATIONS_KEY = "knowledge_citations"
 MAX_KNOWLEDGE_CONTEXT_CHARS = 4_000
-MAX_KNOWLEDGE_CITATIONS = 20
-MAX_KNOWLEDGE_QUOTE_CHARS = 2_000
+MAX_KNOWLEDGE_CITATIONS = 12
+MAX_KNOWLEDGE_QUOTE_CHARS = 1_200
 
 
 def knowledge_context_raw(metadata: Mapping[str, Any] | None) -> dict[str, str]:
