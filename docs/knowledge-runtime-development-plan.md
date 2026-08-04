@@ -1,6 +1,6 @@
 # nanobot Knowledge Runtime 开发计划
 
-更新时间：2026-08-04
+更新时间：2026-08-05
 
 本计划记录基于参考知识库结构的 Phase 2 实现进度。边界保持为：
 
@@ -34,7 +34,7 @@ Knowledge Service（核心逻辑）
 - [x] WebUI 知识库选择器：通过 `/api/sessions/{key}/knowledge-projects` 获取摘要，并在下一条 WebSocket message 中携带 `knowledge_project_id`。
 - [x] Knowledge Workspace 轻量入口：项目摘要、任务状态、Raw/IR/Wiki/Graph 快捷预览，复用现有文件树与 FilePreviewPanel。
 - [x] Graph preview：在现有 Workspace 摘要内提供受限 SVG 关系预览，`graph.json` 仍是持久化真相。
-- [x] `.venv\Scripts\python.exe -m pytest tests/knowledge -q`：6 passed。
+- [x] `.venv\Scripts\python.exe -m pytest tests/knowledge tests/writing -q`：24 passed。
 - [x] `webui\bun run build`：TypeScript 与生产构建通过。
 - [x] ingestion adapter contract：扫描 manifest 为文本、Markdown、PDF、HTML、图片记录
   `ingestion_adapter`、`extraction_mode` 与受限读取说明；所有原始字节仍镜像到 `raw/`。
@@ -64,7 +64,8 @@ Knowledge Service（核心逻辑）
 
 ## 当前阶段结论
 
-本轮完成了 MVP 的 durable pipeline：`scan → extract(IR) → compile(wiki + graph) → validate/review → publish`。
+本轮完成了 MVP 的 durable pipeline：`scan → extract(IR) → compile(wiki + graph) → validate/review → publish`，
+并完成了 source manifest 的 ingestion adapter 契约；Knowledge 仍是 Workspace 级能力，不拆成独立 Agent。
 `knowledge_validate` 会持久化 Review 结果；验证失败时不会发布。WebUI 仅增加知识项目摘要与快捷入口，不改变 Conversation/Agent Timeline 的既有布局。
 `knowledge/task.json` 保存任务阶段、状态、待处理/已处理来源，Runtime Context 只在知识任务或显式选择项目时读取它。
 
@@ -79,7 +80,7 @@ Writing Agent 集成已完成后端第一步：`knowledge_search` 会返回并�
 - [ ] 完成 PDF/网页/OCR 的实际解析适配器（当前已完成 manifest 契约与 raw 镜像，抽取仍由
   Agent 按契约调用 bounded reader 后提交 IR）。
 - [ ] 评估向量检索和 GraphRAG；在证据链、权限边界和可观察性稳定前不全量注入 wiki。
-- [ ] 后续再评估独立 Knowledge Agent、多 Agent 协作和图谱可视化。
+- [ ] 后续再评估 Graph/Wiki 的高级可视化；不引入独立 Knowledge Agent 或多 Agent 协作。
 
 ## 已知门禁问题
 
