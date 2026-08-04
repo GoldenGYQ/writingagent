@@ -1009,7 +1009,25 @@
       "newChat": "開始新話題",
       "toggleTheme": "切換佈景主題",
       "settings": "開啟設定",
-      "sessionInfo": "對話詳細資料"
+      "sessionInfo": "對話詳細資料",
+      "workspaceToggle": "切換文件工作區"
+    },
+    "workspace": {
+      "title": "文件工作區",
+      "toggle": "切換文件工作區",
+      "explorer": "工作區檔案樹",
+      "preview": "文件預覽",
+      "recent": "最近修改",
+      "loading": "正在載入工作區…",
+      "empty": "工作區中沒有檔案",
+      "selectFile": "選擇檔案進行預覽",
+      "refresh": "重新整理工作區",
+      "close": "關閉文件工作區",
+      "resize": "調整文件工作區寬度",
+      "explorerResize": "調整檔案樹寬度",
+      "collapseExplorer": "摺疊檔案樹",
+      "expandExplorer": "展開檔案樹",
+      "treeError": "無法載入工作區檔案"
     },
     "sessionInfo": {
       "title": "對話",
@@ -1208,7 +1226,11 @@
         "default": "預設權限",
         "defaultShort": "預設",
         "full": "完整存取權",
-        "fullShort": "完整"
+        "fullShort": "完整",
+        "executionAria": "檔案修改執行策略",
+        "readOnly": "唯讀",
+        "ask": "套用前詢問",
+        "auto": "自動套用"
       }
     },
     "scrollToBottom": "捲動到底部",
@@ -1288,7 +1310,8 @@
     "failed": "無法預覽這個檔案。",
     "routeMissing": "檔案預覽需要最新版本的閘道。請重新啟動 nanobot 閘道後再試一次。",
     "resize": "調整檔案預覽寬度",
-    "truncated": "檔案較大，因此預覽內容已截斷。"
+    "truncated": "檔案較大，因此預覽內容已截斷。",
+    "quoteSelection": "引用所選內容"
   },
   "code": {
     "fallbackLanguage": "程式碼",

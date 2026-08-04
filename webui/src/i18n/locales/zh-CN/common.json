@@ -1023,7 +1023,25 @@
       "newChat": "从顶部新建话题",
       "toggleTheme": "从顶部切换主题",
       "settings": "打开设置",
-      "sessionInfo": "会话详情"
+      "sessionInfo": "会话详情",
+      "workspaceToggle": "切换文档工作区"
+    },
+    "workspace": {
+      "title": "文档工作区",
+      "toggle": "切换文档工作区",
+      "explorer": "工作区文件树",
+      "preview": "文档预览",
+      "recent": "最近修改",
+      "loading": "正在加载工作区...",
+      "empty": "工作区中没有文件",
+      "selectFile": "选择文件进行预览",
+      "refresh": "刷新工作区",
+      "close": "关闭文档工作区",
+      "resize": "调整文档工作区宽度",
+      "explorerResize": "调整文件树宽度",
+      "collapseExplorer": "折叠文件树",
+      "expandExplorer": "展开文件树",
+      "treeError": "无法加载工作区文件"
     },
     "sessionInfo": {
       "title": "会话",
@@ -1222,7 +1240,11 @@
         "default": "默认权限",
         "defaultShort": "默认",
         "full": "完全访问权限",
-        "fullShort": "完全"
+        "fullShort": "完全",
+        "executionAria": "文件修改执行策略",
+        "readOnly": "只读",
+        "ask": "应用前询问",
+        "auto": "自动应用"
       }
     },
     "scrollToBottom": "滚动到底部",
@@ -1302,7 +1324,8 @@
     "failed": "无法预览这个文件。",
     "routeMissing": "文件预览需要最新的 gateway。请重启 nanobot gateway 后再试。",
     "resize": "调整文件预览宽度",
-    "truncated": "文件较大，当前只显示前半部分预览。"
+    "truncated": "文件较大，当前只显示前半部分预览。",
+    "quoteSelection": "引用所选内容"
   },
   "code": {
     "fallbackLanguage": "代码",

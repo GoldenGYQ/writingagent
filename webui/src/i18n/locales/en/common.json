@@ -1023,7 +1023,25 @@
       "newChat": "Start a new topic",
       "toggleTheme": "Toggle theme from header",
       "settings": "Open settings",
-      "sessionInfo": "Session details"
+      "sessionInfo": "Session details",
+      "workspaceToggle": "Toggle document workspace"
+    },
+    "workspace": {
+      "title": "Document workspace",
+      "toggle": "Toggle document workspace",
+      "explorer": "Workspace explorer",
+      "preview": "Document preview",
+      "recent": "Recent changes",
+      "loading": "Loading workspace...",
+      "empty": "No files in this workspace",
+      "selectFile": "Select a file to preview",
+      "refresh": "Refresh workspace",
+      "close": "Close document workspace",
+      "resize": "Resize document workspace",
+      "explorerResize": "Resize file tree",
+      "collapseExplorer": "Collapse file tree",
+      "expandExplorer": "Expand file tree",
+      "treeError": "Could not load workspace files"
     },
     "sessionInfo": {
       "title": "Session",
@@ -1222,7 +1240,11 @@
         "default": "Default Permission",
         "defaultShort": "Default",
         "full": "Full Access",
-        "fullShort": "Full"
+        "fullShort": "Full",
+        "executionAria": "File change execution policy",
+        "readOnly": "Read-only",
+        "ask": "Ask before apply",
+        "auto": "Auto apply"
       }
     },
     "scrollToBottom": "Scroll to bottom",
@@ -1302,7 +1324,8 @@
     "failed": "Could not preview this file.",
     "routeMissing": "File preview needs the latest gateway. Restart nanobot gateway and try again.",
     "resize": "Resize file preview",
-    "truncated": "Preview is truncated because this file is large."
+    "truncated": "Preview is truncated because this file is large.",
+    "quoteSelection": "Cite selection"
   },
   "code": {
     "fallbackLanguage": "code",
