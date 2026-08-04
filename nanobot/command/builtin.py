@@ -928,6 +928,8 @@ async def cmd_goal(ctx: CommandContext) -> OutboundMessage | None:
 
 async def cmd_knowledge(ctx: CommandContext) -> OutboundMessage | None:
     """Initialize a Knowledge task without bypassing the Agent Runtime."""
+    from nanobot.agent.goal_permission import goal_mutation_permission
+
     source = ctx.args.strip()
     if not source:
         return OutboundMessage(
@@ -977,6 +979,7 @@ async def cmd_knowledge(ctx: CommandContext) -> OutboundMessage | None:
 
     project = result["project"]
     task = result["task"]
+    ctx.turn_scopes.append(goal_mutation_permission(True))
     session_metadata = ctx.session.metadata if isinstance(ctx.session.metadata, dict) else {}
     ctx.session.metadata = session_metadata
     knowledge_context = set_knowledge_context(
@@ -991,6 +994,8 @@ async def cmd_knowledge(ctx: CommandContext) -> OutboundMessage | None:
         "knowledge_requested": source,
         "knowledge_project_id": project["id"],
         "knowledge_context": knowledge_context,
+        "goal_requested": True,
+        "goal_domain": "knowledge",
         "original_command": "/knowledge",
         "original_content": ctx.raw,
     }

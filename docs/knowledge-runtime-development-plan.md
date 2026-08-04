@@ -30,7 +30,7 @@ Knowledge Service（核心逻辑）
 - [x] `knowledge_scan` / `knowledge_extract` / `knowledge_compile` / `knowledge_validate` / `knowledge_publish` 工具。
 - [x] `knowledge_search`：仅检索选中的知识项目，支持 page type/tag/source path 过滤，返回有界 quote、wiki 行号和 raw source citations。
 - [x] `knowledge-engineering` Skill：约束 scan → extract → compile → validate → publish，并要求保存来源证据。
-- [x] `/knowledge <source-directory>`：初始化可恢复的 KnowledgeProject/Task 边界；不扫描或编译，后续仍由 Agent Runtime 调用可观察工具。
+- [x] `/knowledge <source-directory>`：初始化可恢复的 KnowledgeProject/Task，并按 `/goal` 语义标记本轮 Goal 请求；不扫描或编译，后续仍由 Agent Runtime 调用可观察工具。
 - [x] Runtime Context 条件注入：仅在知识请求、已有知识上下文或 WebUI 显式选择项目时注入。
 - [x] WebUI 知识库选择器：通过 `/api/sessions/{key}/knowledge-projects` 获取摘要，并在下一条 WebSocket message 中携带 `knowledge_project_id`。
 - [x] Knowledge Workspace 轻量入口：项目摘要、任务状态、Raw/IR/Wiki/Graph 快捷预览，复用现有文件树与 FilePreviewPanel。
@@ -67,7 +67,7 @@ Knowledge Service（核心逻辑）
 
 本轮完成了 MVP 的 durable pipeline：`scan → extract(IR) → compile(wiki + graph) → validate/review → publish`，
 并完成了 source manifest 的 ingestion adapter 契约；Knowledge 仍是 Workspace 级能力，不拆成独立 Agent。
-`knowledge_validate` 会持久化 Review 结果；验证失败时不会发布。`/knowledge` 只初始化项目/任务元数据，不隐藏扫描、抽取或编译；WebUI 仅增加知识项目摘要与快捷入口，不改变 Conversation/Agent Timeline 的既有布局。
+`knowledge_validate` 会持久化 Review 结果；验证失败时不会发布。`/knowledge` 只初始化项目/任务元数据并授权 Agent 通过 `create_goal` 建立领域 Goal，不隐藏扫描、抽取或编译；WebUI 仅增加知识项目摘要与快捷入口，不改变 Conversation/Agent Timeline 的既有布局。
 `knowledge/task.json` 保存任务阶段、状态、待处理/已处理来源，Runtime Context 只在知识任务或显式选择项目时读取它。
 
 Writing Agent 集成已完成后端第一步：`knowledge_search` 会返回并在会话中保存有界 citations；当当前请求选中了同一 Knowledge project 且 `writing_changeset` 未显式传入 `sources` 时，ChangeSet 会自动携带最近检索的 citations。Writing Runtime Context 只注入选中项目标识和引用数量，不注入整段知识内容。

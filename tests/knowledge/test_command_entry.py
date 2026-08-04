@@ -41,6 +41,9 @@ async def test_knowledge_command_initializes_task_boundary_without_scanning(tmp_
     assert context.msg.metadata["original_command"] == "/knowledge"
     assert context.msg.metadata["knowledge_project_id"].startswith("kb_")
     assert context.msg.metadata["knowledge_context"]["task_id"].startswith("task_")
+    assert context.msg.metadata["goal_requested"] is True
+    assert context.msg.metadata["goal_domain"] == "knowledge"
+    assert len(context.turn_scopes) == 1
     project_root = tmp_path / "wikis" / context.msg.metadata["knowledge_project_id"]
     assert (project_root / "project.json").exists()
     assert (project_root / "knowledge" / "task.json").exists()
