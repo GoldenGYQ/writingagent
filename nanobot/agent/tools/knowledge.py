@@ -186,7 +186,7 @@ class KnowledgeScanTool(Tool, _KnowledgeToolMixin):
 
     @property
     def description(self) -> str:
-        return "Scan a workspace source directory and create a durable Knowledge project manifest."
+        return "Scan a workspace source directory and create/update the active durable Knowledge project manifest."
 
     def runtime_context_provider(self):
         return self._context_provider
@@ -202,6 +202,7 @@ class KnowledgeScanTool(Tool, _KnowledgeToolMixin):
     ) -> str:
         try:
             service = KnowledgeService(_store(self._workspace))
+            project_id = project_id or self._context().get("project_id")
             result = service.scan(
                 path,
                 project_id=project_id,

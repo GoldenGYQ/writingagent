@@ -104,6 +104,41 @@ class KnowledgeService:
             raise KnowledgeStoreError(f"knowledge source directory not found: {raw_path}")
         return resolved
 
+    def initialize(
+        self,
+        source_path: str,
+        *,
+        title: str | None = None,
+        schema_name: str = "default",
+    ) -> dict[str, Any]:
+        """Create a durable project/task boundary without scanning sources.
+
+        ``/knowledge`` uses this lightweight initializer so the task exists
+        before the Agent starts calling observable Knowledge tools.  Scanning,
+        extraction, compilation, validation, and publishing remain separate
+        tool operations; this method intentionally performs no source reads or
+        writes other than project metadata and empty artifact directories.
+        """
+        source_root = self.resolve_source(source_path)
+        project = KnowledgeProject(
+            id=new_id("kb"),
+            title=(title or source_root.name or "Knowledge Wiki").strip(),
+            source_root=str(source_root),
+            schema_name=schema_name.strip() or "default",
+            status="active",
+            phase="scanning",
+        )
+        self.store.create_project(project)
+        task = self._task_for_project(project)
+        self._save_task(project, task, phase="scanning", status="active")
+        project.updated_at = _now()
+        self.store.save_project(project)
+        return {
+            "project": project.to_dict(),
+            "task": task.to_dict(),
+            "next": "call knowledge_scan with this project_id, then extract structured IR",
+        }
+
     def scan(
         self,
         source_path: str,

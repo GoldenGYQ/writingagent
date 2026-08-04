@@ -30,11 +30,11 @@ Knowledge Service（核心逻辑）
 - [x] `knowledge_scan` / `knowledge_extract` / `knowledge_compile` / `knowledge_validate` / `knowledge_publish` 工具。
 - [x] `knowledge_search`：仅检索选中的知识项目，支持 page type/tag/source path 过滤，返回有界 quote、wiki 行号和 raw source citations。
 - [x] `knowledge-engineering` Skill：约束 scan → extract → compile → validate → publish，并要求保存来源证据。
-- [x] `/knowledge <source-directory>`：只声明任务边界，实际执行仍由 Agent Runtime 调用工具。
+- [x] `/knowledge <source-directory>`：初始化可恢复的 KnowledgeProject/Task 边界；不扫描或编译，后续仍由 Agent Runtime 调用可观察工具。
 - [x] Runtime Context 条件注入：仅在知识请求、已有知识上下文或 WebUI 显式选择项目时注入。
 - [x] WebUI 知识库选择器：通过 `/api/sessions/{key}/knowledge-projects` 获取摘要，并在下一条 WebSocket message 中携带 `knowledge_project_id`。
 - [x] Knowledge Workspace 轻量入口：项目摘要、任务状态、Raw/IR/Wiki/Graph 快捷预览，复用现有文件树与 FilePreviewPanel。
-- [x] Graph preview：在现有 Workspace 摘要内提供受限 SVG 关系预览，`graph.json` 仍是持久化真相。
+- [x] Graph preview：在现有 Workspace 摘要内提供受限 Cytoscape.js 关系预览，`graph.json` 仍是持久化真相；无 Canvas 环境有降级提示。
 - [x] `.venv\Scripts\python.exe -m pytest tests/knowledge tests/writing -q`：25 passed。
 - [x] `webui\bun run build`：TypeScript 与生产构建通过。
 - [x] ingestion adapter contract：扫描 manifest 为文本、Markdown、PDF、HTML、图片记录
@@ -67,7 +67,7 @@ Knowledge Service（核心逻辑）
 
 本轮完成了 MVP 的 durable pipeline：`scan → extract(IR) → compile(wiki + graph) → validate/review → publish`，
 并完成了 source manifest 的 ingestion adapter 契约；Knowledge 仍是 Workspace 级能力，不拆成独立 Agent。
-`knowledge_validate` 会持久化 Review 结果；验证失败时不会发布。WebUI 仅增加知识项目摘要与快捷入口，不改变 Conversation/Agent Timeline 的既有布局。
+`knowledge_validate` 会持久化 Review 结果；验证失败时不会发布。`/knowledge` 只初始化项目/任务元数据，不隐藏扫描、抽取或编译；WebUI 仅增加知识项目摘要与快捷入口，不改变 Conversation/Agent Timeline 的既有布局。
 `knowledge/task.json` 保存任务阶段、状态、待处理/已处理来源，Runtime Context 只在知识任务或显式选择项目时读取它。
 
 Writing Agent 集成已完成后端第一步：`knowledge_search` 会返回并在会话中保存有界 citations；当当前请求选中了同一 Knowledge project 且 `writing_changeset` 未显式传入 `sources` 时，ChangeSet 会自动携带最近检索的 citations。Writing Runtime Context 只注入选中项目标识和引用数量，不注入整段知识内容。
@@ -90,6 +90,7 @@ Writing Agent 集成已完成后端第一步：`knowledge_search` 会返回并�
 ## 2026-08-05 验证记录
 
 - 真实参考目录 `D:\Users\gyq16\Desktop\PRJ\NANOTEST2\wikis` 可被只读发现为“项目知识库”：185 个 Wiki 页面、14 个原始来源，状态为 `published`。
+- `.venv\Scripts\python.exe -m pytest tests/knowledge -q`：20 passed；Knowledge 相关 Ruff 检查通过。
 - `.venv\Scripts\python.exe -m pytest tests/knowledge tests/writing -q`：25 passed；Knowledge/Writing 相关 Ruff 检查通过。
-- WebUI 的 i18n、文件预览、多行引用与 ThreadShell 定向测试：76 passed；本次复跑通过，所有 locale 的资源键结构已对齐。
+- WebUI 的 i18n、文件预览、多行引用、Knowledge Workspace 与 ThreadShell 定向测试：77 passed；本次复跑通过，所有 locale 的资源键结构已对齐。
 - 全量 WebUI 在 `--testTimeout=10000` 下为 903/904；剩余失败是未修改的 `ThreadViewport` 动画时序断言（期望 2400，实际值接近目标），不属于 Knowledge/Workspace 变更。

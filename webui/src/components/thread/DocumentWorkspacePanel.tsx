@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type PointerEvent as ReactPointerEvent } from "react";
+import cytoscape from "cytoscape";
 import { BookOpen, ChevronDown, ChevronRight, FileCode2, Folder, FolderOpen, PanelRightClose, PanelRightOpen, RefreshCw, X } from "lucide-react";
 import { useTranslation } from "react-i18next";
 
@@ -183,6 +184,7 @@ export function DocumentWorkspacePanel({
       } as CSSProperties}
       data-file-preview-panel
       data-document-workspace
+      data-testid="document-workspace-panel"
       aria-label={t("thread.workspace.title")}
     >
       {onResizeStart ? (
@@ -411,41 +413,95 @@ function KnowledgeGraphPreview({
 }: {
   graph: NonNullable<KnowledgeProjectDetailPayload["graph"]>;
 }) {
-  const nodes = graph.nodes.slice(0, 30);
-  const width = 236;
-  const height = 150;
-  const centerX = width / 2;
-  const centerY = height / 2;
-  const radius = Math.max(22, Math.min(58, nodes.length * 3));
-  const positions = new Map(
-    nodes.map((node, index) => {
-      const angle = nodes.length === 1 ? 0 : (index / nodes.length) * Math.PI * 2 - Math.PI / 2;
-      return [node.id, {
-        x: centerX + Math.cos(angle) * radius,
-        y: centerY + Math.sin(angle) * radius,
-      }];
-    }),
-  );
+  const containerRef = useRef<HTMLDivElement>(null);
+  const [graphError, setGraphError] = useState(false);
+
+  useEffect(() => {
+    const container = containerRef.current;
+    if (!container) return undefined;
+    setGraphError(false);
+
+    const nodes = graph.nodes
+      .filter((node) => node.id.trim())
+      .slice(0, 50);
+    const nodeIds = new Set(nodes.map((node) => node.id));
+    const edges = graph.edges
+      .filter((edge) => nodeIds.has(edge.source) && nodeIds.has(edge.target))
+      .slice(0, 100);
+    const elements: cytoscape.ElementDefinition[] = [
+      ...nodes.map((node) => ({
+        data: {
+          id: node.id,
+          label: (node.title || node.id).slice(0, 24),
+          type: node.type || "entity",
+        },
+      })),
+      ...edges.map((edge, index) => ({
+        data: {
+          id: `${edge.source}:${edge.target}:${index}`,
+          source: edge.source,
+          target: edge.target,
+          label: edge.relation || "related",
+        },
+      })),
+    ];
+
+    let instance: cytoscape.Core;
+    try {
+      instance = cytoscape({
+        container,
+        elements,
+        layout: { name: "cose", animate: false, fit: true, padding: 12 },
+        style: [
+          {
+            selector: "node",
+            style: {
+              "background-color": "hsl(var(--primary))",
+              "background-opacity": 0.8,
+              color: "hsl(var(--foreground))",
+              label: "data(label)",
+              "font-size": 7,
+              "text-wrap": "ellipsis",
+              "text-max-width": "72px",
+              "text-valign": "center",
+              "text-halign": "center",
+              width: 18,
+              height: 18,
+            },
+          },
+          {
+            selector: "edge",
+            style: {
+              width: 1,
+              "line-color": "hsl(var(--muted-foreground))",
+              "line-opacity": 0.35,
+              "target-arrow-color": "hsl(var(--muted-foreground))",
+              "target-arrow-shape": "triangle",
+              "curve-style": "bezier",
+            },
+          },
+        ],
+        userZoomingEnabled: false,
+        userPanningEnabled: false,
+        boxSelectionEnabled: false,
+      });
+    } catch {
+      setGraphError(true);
+      return undefined;
+    }
+
+    return () => instance.destroy();
+  }, [graph]);
+
   return (
-    <div className="mt-1 overflow-hidden rounded border border-border/60 bg-background/75 p-1" aria-label="Knowledge graph preview">
-      <svg viewBox={`0 0 ${width} ${height}`} className="h-[150px] w-full" role="img" aria-label="Knowledge graph">
-        {graph.edges.slice(0, 80).map((edge, index) => {
-          const source = positions.get(edge.source);
-          const target = positions.get(edge.target);
-          if (!source || !target) return null;
-          return <line key={`${edge.source}:${edge.target}:${index}`} x1={source.x} y1={source.y} x2={target.x} y2={target.y} stroke="currentColor" strokeOpacity="0.22" strokeWidth="1" />;
-        })}
-        {nodes.map((node) => {
-          const position = positions.get(node.id);
-          if (!position) return null;
-          return (
-            <g key={node.id} transform={`translate(${position.x},${position.y})`}>
-              <circle r="6" fill="hsl(var(--primary))" fillOpacity="0.78" />
-              <text x="8" y="3" className="fill-foreground/75 text-[7px]">{(node.title || node.id).slice(0, 18)}</text>
-            </g>
-          );
-        })}
-      </svg>
+    <div
+      ref={containerRef}
+      className="mt-1 h-[150px] overflow-hidden rounded border border-border/60 bg-background/75"
+      aria-label="Knowledge graph preview"
+      data-knowledge-graph-canvas
+    >
+      {graph.nodes.length === 0 ? <span className="flex h-full items-center justify-center text-[10px] text-muted-foreground">No graph data</span> : null}
+      {graphError ? <span className="flex h-full items-center justify-center px-2 text-center text-[10px] text-muted-foreground">Graph preview unavailable</span> : null}
     </div>
   );
 }

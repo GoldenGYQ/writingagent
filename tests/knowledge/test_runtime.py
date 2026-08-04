@@ -5,7 +5,7 @@ import json
 import pytest
 
 from nanobot.agent.tools.context import RequestContext, request_context
-from nanobot.agent.tools.knowledge import KnowledgeSearchTool
+from nanobot.agent.tools.knowledge import KnowledgeScanTool, KnowledgeSearchTool
 from nanobot.knowledge.compiler import parse_frontmatter
 from nanobot.knowledge.context import KnowledgeContextProvider, set_knowledge_context
 from nanobot.knowledge.service import KnowledgeService
@@ -111,6 +111,54 @@ def test_scan_extract_compile_validate_publish_reference_shape(tmp_path):
     task = json.loads((project_path / "knowledge" / "task.json").read_text(encoding="utf-8"))
     assert task["status"] == "completed"
     assert task["phase"] == "published"
+
+
+def test_initialize_creates_task_boundary_and_scan_reuses_project(tmp_path):
+    source_root = _source_tree(tmp_path)
+    service = KnowledgeService(KnowledgeStore(tmp_path))
+
+    initialized = service.initialize(str(source_root), title="Deferred scan")
+    project_id = initialized["project"]["id"]
+    project_path = tmp_path / "wikis" / project_id
+    assert initialized["task"]["phase"] == "scanning"
+    assert (project_path / "project.json").exists()
+    assert (project_path / "knowledge" / "task.json").exists()
+    assert not list((project_path / "raw").rglob("*"))
+
+    scanned = service.scan(str(source_root), project_id=project_id)
+    assert scanned["project"]["id"] == project_id
+    assert scanned["files"] == 2
+    assert len(KnowledgeStore(tmp_path).list_projects()) == 1
+
+
+@pytest.mark.asyncio
+async def test_scan_tool_defaults_to_command_initialized_project(tmp_path):
+    source_root = _source_tree(tmp_path)
+    service = KnowledgeService(KnowledgeStore(tmp_path))
+    initialized = service.initialize(str(source_root), title="Tool continuation")
+    project_id = initialized["project"]["id"]
+    sessions = SessionManager(tmp_path)
+    session_key = "websocket:knowledge-tool"
+    session = sessions.get_or_create(session_key)
+    set_knowledge_context(
+        session.metadata,
+        project_id=project_id,
+        task_id=initialized["task"]["id"],
+        source_root=str(source_root),
+        phase="scanning",
+    )
+    sessions.save(session)
+    request = RequestContext(
+        channel="websocket",
+        chat_id="knowledge-tool",
+        session_key=session_key,
+        workspace=tmp_path,
+    )
+    with request_context(request):
+        result = json.loads(await KnowledgeScanTool(str(tmp_path), sessions).execute(str(source_root)))
+    assert result["project"]["id"] == project_id
+    assert result["files"] == 2
+    assert len(KnowledgeStore(tmp_path).list_projects()) == 1
 
 
 def test_compile_merges_existing_pages_and_does_not_duplicate_log(tmp_path):
