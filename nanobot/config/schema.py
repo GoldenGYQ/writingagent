@@ -131,6 +131,20 @@ class AgentDefaults(Base):
     max_concurrent_subagents: int = Field(default=1, ge=1)
     fail_on_tool_error: bool = True
     max_tool_result_chars: int = 16_000
+    # When an in-flight turn exceeds the model input budget, compact only
+    # until this fraction of the budget remains.  A higher value preserves
+    # more recent tool output while still leaving headroom below the hard
+    # provider limit.
+    inflight_compaction_target_ratio: float = Field(
+        default=0.92,
+        ge=0.80,
+        le=0.98,
+        validation_alias=AliasChoices(
+            "inflightCompactionTargetRatio",
+            "inflight_compaction_target_ratio",
+        ),
+        serialization_alias="inflightCompactionTargetRatio",
+    )
     provider_retry_mode: Literal["standard", "persistent"] = "standard"
     tool_hint_max_length: int = Field(
         default=40,

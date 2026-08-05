@@ -536,6 +536,19 @@ describe("App layout", () => {
     });
   });
 
+  it("opens Wiki as an independent top-level page", async () => {
+    render(<App />);
+
+    await waitFor(() => expect(connectSpy).toHaveBeenCalled());
+    const sidebar = screen.getByRole("navigation", { name: "Sidebar navigation" });
+    fireEvent.click(within(sidebar).getByRole("button", { name: "Wiki" }));
+
+    expect(await screen.findByTestId("wiki-view")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Wiki" })).toHaveAttribute("aria-current", "page");
+    expect(window.location.hash).toBe("#/wiki");
+    expect(screen.getByText("Open a workspace chat first")).toBeInTheDocument();
+  });
+
   it("deletes a custom skill from its detail sheet", async () => {
     mockFetchRoutes({
       "/api/settings": baseSettingsPayload(),

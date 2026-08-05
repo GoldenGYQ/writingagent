@@ -47,6 +47,7 @@ import type {
   SlashCommand,
   SkillSummary,
   UIMessage,
+  WritingChangeSetResult,
   WorkspaceScopePayload,
   WorkspacesPayload,
 } from "@/lib/types";
@@ -284,10 +285,10 @@ function canonicalRunSnapshot(
   };
 }
 
-const FILE_PREVIEW_DEFAULT_WIDTH = 544;
+const FILE_PREVIEW_DEFAULT_WIDTH = 820;
 const FILE_PREVIEW_MIN_WIDTH = 360;
-const FILE_PREVIEW_MAX_WIDTH = 860;
-const FILE_PREVIEW_MIN_MAIN_WIDTH = 420;
+const FILE_PREVIEW_MAX_WIDTH = 1180;
+const FILE_PREVIEW_MIN_MAIN_WIDTH = 320;
 const FILE_PREVIEW_CLOSE_ANIMATION_MS = 320;
 
 type FilePreviewAvailabilityCacheEntry = {
@@ -773,6 +774,14 @@ export function ThreadShell({
     setFileCitation(citation);
     setComposerFocusSignal((value) => value + 1);
   }, []);
+
+  const handleSaveContent = useCallback(
+    (request: { path: string; content: string; reason?: string }): Promise<WritingChangeSetResult> => {
+      if (!chatId) return Promise.reject(new Error("No active chat workspace."));
+      return client.proposeWritingChangeSet(chatId, request);
+    },
+    [chatId, client],
+  );
 
   useEffect(() => {
     return () => {
@@ -1519,7 +1528,6 @@ export function ThreadShell({
           onQuotedContextChange={setQuotedContext}
           onFileCitationChange={setFileCitation}
           knowledgeProjects={knowledgeProjects}
-          knowledgeProjectId={knowledgeProjectId}
           onKnowledgeProjectChange={setKnowledgeProjectId}
         />
       ) : (
@@ -1658,6 +1666,7 @@ export function ThreadShell({
           onResizeStart={handleFilePreviewResizeStart}
           onClose={handleCloseFilePreview}
           onFileCitation={handleFileCitation}
+          onSaveContent={handleSaveContent}
         />
       ) : null}
     </section>

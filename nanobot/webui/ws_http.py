@@ -26,6 +26,7 @@ from websockets.http11 import Response
 from nanobot.command.builtin import builtin_command_palette
 from nanobot.cron.session_turns import is_bound_cron_job
 from nanobot.cron.types import CronJob, CronSchedule
+from nanobot.knowledge.compiler import parse_frontmatter
 from nanobot.knowledge.store import KnowledgeNotFoundError, KnowledgeStore
 from nanobot.runtime_context import public_history_messages
 from nanobot.triggers.local_types import LocalTrigger
@@ -669,15 +670,25 @@ class GatewayHTTPHandler:
         wiki_root = store.wiki_root(project.id)
         pages = []
         if wiki_root.exists():
-            pages = [
-                {
-                    "slug": path.stem,
-                    "path": path.relative_to(scope.project_path).as_posix(),
-                    "type": path.parent.name if path.parent != wiki_root else "overview",
-                }
-                for path in sorted(wiki_root.rglob("*.md"))
-                if path.name != "log.md"
-            ]
+            for path in sorted(wiki_root.rglob("*.md")):
+                if path.name == "log.md":
+                    continue
+                metadata: dict[str, Any] = {}
+                try:
+                    metadata, _ = parse_frontmatter(path.read_text(encoding="utf-8"))
+                except (OSError, UnicodeError):
+                    pass
+                pages.append(
+                    {
+                        "slug": path.stem,
+                        "path": path.relative_to(scope.project_path).as_posix(),
+                        "type": str(metadata.get("type") or (path.parent.name if path.parent != wiki_root else "overview")),
+                        "title": str(metadata.get("title") or path.stem),
+                        "tags": [str(value) for value in metadata.get("tags", []) if value],
+                        "related": [str(value) for value in metadata.get("related", []) if value],
+                        "sources": [str(value) for value in metadata.get("sources", []) if value],
+                    }
+                )
         ir_values = store.list_ir(project.id)
         entity_count = sum(len(ir.entities) for ir in ir_values)
         relation_count = sum(len(ir.relations) for ir in ir_values)

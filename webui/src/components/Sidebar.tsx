@@ -8,6 +8,7 @@ import {
   Settings,
   SquarePen,
   Blocks,
+  BookOpen,
 } from "lucide-react";
 import { useTranslation } from "react-i18next";
 
@@ -37,9 +38,10 @@ interface SidebarProps {
   onOpenApps: () => void;
   onOpenSkills: () => void;
   onOpenAutomations: () => void;
+  onOpenWiki: () => void;
   onSettingsIntent?: () => void;
   onOpenSearch: () => void;
-  activeUtility?: "apps" | "skills" | "automations" | null;
+  activeUtility?: "apps" | "skills" | "automations" | "wiki" | null;
   onToggleArchived: () => void;
   onCollapse: () => void;
   onExpand?: () => void;
@@ -176,6 +178,13 @@ export function Sidebar(props: SidebarProps) {
           onIntent={props.onSettingsIntent}
           active={props.activeUtility === "automations"}
           icon={<CalendarClock className="h-4 w-4" />}
+        />
+        <SidebarActionButton
+          collapsed={collapsed}
+          label={t("sidebar.wiki", { defaultValue: "Wiki" })}
+          onClick={props.onOpenWiki}
+          active={props.activeUtility === "wiki"}
+          icon={<BookOpen className="h-4 w-4" />}
         />
         {props.archivedCount ? (
           <SidebarActionButton

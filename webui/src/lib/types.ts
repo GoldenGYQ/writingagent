@@ -1357,6 +1357,7 @@ export type InboundEvent =
       workspace_scope?: WorkspaceScopePayload;
     }
   | { event: "transcription_result"; request_id: string; text: string }
+  | ({ event: "writing_changeset_result" } & WritingChangeSetResult)
   | {
       event: "transcription_error";
       request_id?: string;
@@ -1438,6 +1439,17 @@ export interface FilePreviewPayload {
   truncated: boolean;
 }
 
+/** Result returned when the WebUI saves a managed writing chapter. */
+export interface WritingChangeSetResult {
+  request_id: string;
+  chat_id: string;
+  ok: boolean;
+  status?: "review" | "applied" | "blocked" | "error";
+  changeset?: Record<string, unknown>;
+  revision?: Record<string, unknown> | null;
+  error?: string;
+}
+
 export interface WorkspaceTreeNode {
   name: string;
   path: string;
@@ -1501,7 +1513,15 @@ export interface KnowledgeProjectDetailPayload {
   };
   raw_files?: string[];
   ir_files?: string[];
-  pages: Array<{ slug: string; path: string; type: string }>;
+  pages: Array<{
+    slug: string;
+    path: string;
+    type: string;
+    title?: string;
+    tags?: string[];
+    related?: string[];
+    sources?: string[];
+  }>;
   pages_truncated?: boolean;
   graph?: {
     nodes: Array<{ id: string; type?: string; title?: string }>;
@@ -1515,6 +1535,14 @@ export type Outbound =
   | { type: "attach"; chat_id: string }
   | { type: "set_workspace_scope"; chat_id: string; workspace_scope: WorkspaceScopePayload }
   | { type: "transcribe_audio"; request_id: string; data_url: string; duration_ms?: number }
+  | {
+      type: "writing_changeset_propose";
+      chat_id: string;
+      request_id: string;
+      path: string;
+      content: string;
+      reason?: string;
+    }
   | {
       type: "interaction_response";
       chat_id: string;

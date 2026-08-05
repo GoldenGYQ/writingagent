@@ -725,6 +725,7 @@ class WebUITranscriptRecorder:
         media_paths: list[str] | None = None,
         cli_apps: list[dict[str, Any]] | None = None,
         mcp_presets: list[dict[str, Any]] | None = None,
+        file_citations: list[dict[str, Any]] | None = None,
     ) -> bool:
         if text.strip() == "/stop" and not media_paths:
             return False
@@ -734,6 +735,7 @@ class WebUITranscriptRecorder:
             media_paths=media_paths,
             cli_apps=cli_apps,
             mcp_presets=mcp_presets,
+            file_citations=file_citations,
         )
         if payload is None:
             return False
@@ -902,6 +904,7 @@ def build_user_transcript_event(
     media_paths: list[Any] | None = None,
     cli_apps: list[Any] | None = None,
     mcp_presets: list[Any] | None = None,
+    file_citations: list[Any] | None = None,
 ) -> dict[str, Any] | None:
     paths = [str(path) for path in (media_paths or []) if path]
     if not text and not paths:
@@ -927,6 +930,13 @@ def build_user_transcript_event(
     ]
     if presets:
         event["mcp_presets"] = presets
+    citations = [
+        dict(cast(Mapping[str, Any], citation))
+        for citation in (file_citations or [])
+        if isinstance(citation, Mapping)
+    ]
+    if citations:
+        event["file_citations"] = citations
     return event
 
 
@@ -959,6 +969,7 @@ def _session_user_event(
     media = message.get("media")
     cli_apps = message.get("cli_apps")
     mcp_presets = message.get("mcp_presets")
+    file_citations = message.get("file_citations")
     chat_id = session_key.split(":", 1)[1] if ":" in session_key else session_key
     return build_user_transcript_event(
         chat_id,
@@ -966,6 +977,9 @@ def _session_user_event(
         media_paths=cast(list[Any], media) if isinstance(media, list) else None,
         cli_apps=cast(list[Any], cli_apps) if isinstance(cli_apps, list) else None,
         mcp_presets=cast(list[Any], mcp_presets) if isinstance(mcp_presets, list) else None,
+        file_citations=(
+            cast(list[Any], file_citations) if isinstance(file_citations, list) else None
+        ),
     )
 
 
@@ -1152,7 +1166,13 @@ def _find_unique_session_turn(
 def _user_recovery_signature(event: dict[str, Any]) -> str:
     fields = {
         key: event[key]
-        for key in ("text", "media_paths", "cli_apps", "mcp_presets")
+        for key in (
+            "text",
+            "media_paths",
+            "cli_apps",
+            "mcp_presets",
+            "file_citations",
+        )
         if key in event
     }
     return json.dumps(fields, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
@@ -2003,6 +2023,13 @@ def replay_transcript_to_ui_messages(
                     dict(cast(dict[str, Any], preset))
                     for preset in cast(list[Any], mcp_presets)
                     if isinstance(preset, dict)
+                ]
+            file_citations = rec.get("file_citations")
+            if isinstance(file_citations, list) and file_citations:
+                row["fileCitations"] = [
+                    dict(cast(dict[str, Any], citation))
+                    for citation in cast(list[Any], file_citations)
+                    if isinstance(citation, dict)
                 ]
             messages.append(row)
             continue

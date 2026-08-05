@@ -1426,6 +1426,14 @@ Existing configs do not need to change. Direct `agents.defaults.model`, `provide
 
 Set `agents.defaults.modelPreset` to choose the preset followed by sessions that have no saved model selection. When `modelPreset` is `null` or omitted, such sessions follow the implicit `default` preset from direct `agents.defaults.*` fields. `/model <preset>` saves an override in the current session, so its future turns keep that preset across process restarts while other sessions remain unchanged. The command does not write the selection back to `config.json`.
 
+When a long tool-using turn exceeds the effective input budget, the runtime
+compacts eligible in-flight tool results until it reaches a safe low-water mark.
+Set `agents.defaults.inflightCompactionTargetRatio` (0.80–0.98, default `0.92`)
+to control how much of that input budget is retained after compaction. A higher
+value preserves more tool output, but does not remove the model/provider hard
+context limit. `maxToolResultChars` is a separate per-result offload/truncation
+setting and is not a substitute for increasing the model context window.
+
 ### Model Fallbacks
 
 `agents.defaults.fallbackModels` defines an ordered failover chain for the active model configuration. The primary model is still selected by `agents.defaults.modelPreset` or, in older configs, by the implicit `default` preset from direct `agents.defaults.*` fields.

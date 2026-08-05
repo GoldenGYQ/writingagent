@@ -904,6 +904,36 @@ describe("ThreadComposer", () => {
     );
   });
 
+  it("renders and changes file execution policy independently", async () => {
+    const onWorkspaceScopeChange = vi.fn();
+    render(
+      <ThreadComposer
+        onSend={vi.fn()}
+        placeholder="Type your message..."
+        workspaceScope={{
+          project_path: "/tmp/project",
+          project_name: "project",
+          access_mode: "restricted",
+          execution_policy: "auto",
+          restrict_to_workspace: true,
+        }}
+        workspaceControls={{ can_change_project: true, can_use_full_access: true }}
+        onWorkspaceScopeChange={onWorkspaceScopeChange}
+      />,
+    );
+
+    fireEvent.pointerDown(screen.getByRole("button", { name: /File change execution policy/ }));
+    fireEvent.click(await screen.findByRole("menuitem", { name: /Ask before apply/ }));
+
+    expect(onWorkspaceScopeChange).toHaveBeenCalledWith(
+      expect.objectContaining({
+        access_mode: "restricted",
+        execution_policy: "ask",
+        restrict_to_workspace: true,
+      }),
+    );
+  });
+
   it("exposes full and compact workspace labels for container-driven compression", () => {
     render(
       <ThreadComposer

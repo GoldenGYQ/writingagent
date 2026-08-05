@@ -72,6 +72,23 @@ class GoalStateSyncEvent(OutboundEvent):
 
 
 @dataclass(frozen=True)
+class WorkingPlanSyncEvent(OutboundEvent):
+    working_plan: dict[str, Any]
+
+
+@dataclass(frozen=True)
+class InteractionStateSyncEvent(OutboundEvent):
+    interaction: dict[str, Any]
+
+
+@dataclass(frozen=True)
+class WritingArtifactSyncEvent(OutboundEvent):
+    """Current Writing Document Runtime projection for a WebUI session."""
+
+    writing: dict[str, Any]
+
+
+@dataclass(frozen=True)
 class SessionUpdatedEvent(OutboundEvent):
     scope: str | None = None
 

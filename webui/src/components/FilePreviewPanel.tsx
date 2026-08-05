@@ -1,12 +1,14 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { CSSProperties, PointerEvent as ReactPointerEvent } from "react";
-import { AlertCircle, ChevronRight, Loader2, Quote, X } from "lucide-react";
+import { AlertCircle, CheckCircle2, ChevronRight, Code2, Eye, Loader2, Pencil, Quote, Save, X } from "lucide-react";
 import { useTranslation } from "react-i18next";
 
 import { CodeBlock } from "@/components/CodeBlock";
 import { splitFilePath } from "@/components/FileReferenceChip";
+import { MarkdownText } from "@/components/MarkdownText";
+import { SourceEditor } from "@/components/SourceEditor";
 import { ApiError, fetchFilePreview } from "@/lib/api";
-import type { FileCitation, FilePreviewPayload } from "@/lib/types";
+import type { FileCitation, FilePreviewPayload, WritingChangeSetResult } from "@/lib/types";
 import { cn } from "@/lib/utils";
 
 interface FilePreviewPanelProps {
@@ -20,6 +22,9 @@ interface FilePreviewPanelProps {
   embedded?: boolean;
   refreshKey?: number;
   onFileCitation?: (citation: FileCitation) => void;
+  onOpenFilePreview?: (path: string) => void;
+  onOpenReference?: (reference: string) => void;
+  onSaveContent?: (request: { path: string; content: string; reason?: string }) => Promise<WritingChangeSetResult>;
 }
 
 type PreviewState =
@@ -98,11 +103,19 @@ export function FilePreviewPanel({
   embedded = false,
   refreshKey = 0,
   onFileCitation,
+  onOpenFilePreview,
+  onOpenReference,
+  onSaveContent,
 }: FilePreviewPanelProps) {
   const { t } = useTranslation();
   const [state, setState] = useState<PreviewState>({ status: "loading" });
   const [entered, setEntered] = useState(false);
   const [selection, setSelection] = useState<FileCitation | null>(null);
+  const [panelMode, setPanelMode] = useState<"preview" | "source">("preview");
+  const [draft, setDraft] = useState("");
+  const [saveState, setSaveState] = useState<"idle" | "saving" | "saved" | "review" | "error">("idle");
+  const [saveError, setSaveError] = useState<string | null>(null);
+  const originalContentRef = useRef("");
   const selectableRef = useRef<HTMLDivElement | null>(null);
   const tokenRef = useRef(token);
   tokenRef.current = token;
@@ -128,6 +141,47 @@ export function FilePreviewPanel({
   }, [path, sessionKey, refreshKey]);
 
   useEffect(() => setSelection(null), [path, refreshKey]);
+
+  useEffect(() => {
+    if (state.status !== "ready") return;
+    setDraft(state.payload.content);
+    originalContentRef.current = state.payload.content;
+    setPanelMode("preview");
+    setSaveState("idle");
+    setSaveError(null);
+  }, [state.status === "ready" ? state.payload.path : null, refreshKey]);
+
+  const dirty = state.status === "ready" && draft !== originalContentRef.current;
+
+  const saveDraft = useCallback(async () => {
+    if (state.status !== "ready" || !dirty || !onSaveContent || saveState === "saving") return;
+    setSaveState("saving");
+    setSaveError(null);
+    try {
+      const result = await onSaveContent({
+        path: state.payload.path,
+        content: draft,
+        reason: "Edit from WebUI source editor",
+      });
+      originalContentRef.current = draft;
+      if (result.status === "applied") {
+        setState({
+          status: "ready",
+          payload: {
+            ...state.payload,
+            content: draft,
+            size: new TextEncoder().encode(draft).byteLength,
+            truncated: false,
+          },
+        });
+      }
+      setSaveState(result.status === "review" ? "review" : "saved");
+      setPanelMode("preview");
+    } catch (error: unknown) {
+      setSaveState("error");
+      setSaveError(error instanceof Error ? error.message : "Could not save this edit.");
+    }
+  }, [dirty, draft, onSaveContent, saveState, state]);
 
   const captureSelection = useCallback(() => {
     if (state.status !== "ready" || !onFileCitation) return;
@@ -157,7 +211,8 @@ export function FilePreviewPanel({
       .filter((line): line is number => Number.isFinite(line));
     const domStartLine = selectedLineNumbers.length > 0 ? Math.min(...selectedLineNumbers) : null;
     const domEndLine = selectedLineNumbers.length > 0 ? Math.max(...selectedLineNumbers) : null;
-    const range = selectionRangeInContent(state.payload.content, selected);
+    const contentForSelection = panelMode === "source" ? draft : state.payload.content;
+    const range = selectionRangeInContent(contentForSelection, selected);
     if (!range) {
       if (domStartLine === null || domEndLine === null) {
         setSelection(null);
@@ -177,7 +232,7 @@ export function FilePreviewPanel({
       end_line: domEndLine ?? range.endLine,
       quote: range.quote,
     });
-  }, [onFileCitation, state]);
+  }, [draft, onFileCitation, panelMode, state]);
 
   const scheduleSelectionCapture = useCallback(() => {
     window.requestAnimationFrame(captureSelection);
@@ -336,6 +391,56 @@ export function FilePreviewPanel({
             </button>
           </div>
 
+          <div className="flex min-h-10 shrink-0 items-center gap-2 border-b border-border/50 bg-muted/10 px-3">
+            <div className="flex items-center rounded-md border border-border/65 bg-background/70 p-0.5" role="tablist" aria-label="File view mode">
+              <button
+                type="button"
+                role="tab"
+                aria-selected={panelMode === "preview"}
+                className={cn(
+                  "inline-flex h-7 items-center gap-1.5 rounded px-2 text-[11px] transition-colors",
+                  panelMode === "preview" ? "bg-accent text-foreground" : "text-muted-foreground hover:text-foreground",
+                )}
+                onClick={() => setPanelMode("preview")}
+              >
+                <Eye className="h-3.5 w-3.5" aria-hidden />
+                Preview
+              </button>
+              <button
+                type="button"
+                role="tab"
+                aria-selected={panelMode === "source"}
+                className={cn(
+                  "inline-flex h-7 items-center gap-1.5 rounded px-2 text-[11px] transition-colors",
+                  panelMode === "source" ? "bg-accent text-foreground" : "text-muted-foreground hover:text-foreground",
+                )}
+                onClick={() => setPanelMode("source")}
+              >
+                <Code2 className="h-3.5 w-3.5" aria-hidden />
+                Source
+              </button>
+            </div>
+            {state.status === "ready" && dirty ? <span className="inline-flex items-center gap-1 text-[10px] text-amber-600 dark:text-amber-300"><Pencil className="h-3 w-3" aria-hidden />Unsaved changes</span> : null}
+            <span className="ml-auto flex items-center gap-2 text-[10px] text-muted-foreground">
+              {saveState === "saving" ? <><Loader2 className="h-3 w-3 animate-spin" aria-hidden />Saving…</> : null}
+              {saveState === "saved" ? <><CheckCircle2 className="h-3 w-3 text-emerald-500" aria-hidden />Saved</> : null}
+              {saveState === "review" ? <span className="text-amber-600 dark:text-amber-300">ChangeSet pending approval</span> : null}
+              {saveState === "error" ? <span className="max-w-[220px] truncate text-destructive" title={saveError ?? undefined}>{saveError ?? "Save failed"}</span> : null}
+            </span>
+            {panelMode === "source" ? (
+              <button
+                type="button"
+                className="inline-flex h-7 items-center gap-1.5 rounded-md border border-primary/30 bg-primary/10 px-2 text-[11px] font-medium text-primary transition-colors hover:bg-primary/15 disabled:cursor-not-allowed disabled:opacity-45"
+                onClick={() => void saveDraft()}
+                disabled={!dirty || !onSaveContent || saveState === "saving"}
+                title={onSaveContent ? "Save as a Writing ChangeSet" : "Select a managed Writing chapter to enable saving"}
+              >
+                <Save className="h-3.5 w-3.5" aria-hidden />
+                Save
+              </button>
+            ) : null}
+          </div>
+
           <div className="relative min-h-0 flex-1 overflow-auto">
             {state.status === "loading" ? (
               <div className="flex h-full items-center justify-center gap-2 text-sm text-muted-foreground">
@@ -387,15 +492,35 @@ export function FilePreviewPanel({
                     })}
                   </div>
                 ) : null}
-                <CodeBlock
-                  language={state.payload.language}
-                  code={state.payload.content}
-                  chrome="none"
-                  highlight
-                  showLineNumbers
-                  wrapLongLines={false}
-                  className="min-h-full"
-                />
+                {panelMode === "source" ? (
+                  <SourceEditor
+                    key={`${previewPath}:${state.payload.language}`}
+                    value={draft}
+                    language={state.payload.language}
+                    onChange={setDraft}
+                    ariaLabel={`Source editor for ${fileName}`}
+                    className="min-h-full"
+                  />
+                ) : state.payload.language === "markdown" || state.payload.language === "mdx" ? (
+                  <div className="prose prose-sm max-w-none px-4 py-4 text-foreground dark:prose-invert">
+                    <MarkdownText
+                      onOpenFilePreview={onOpenFilePreview}
+                      onOpenReference={onOpenReference}
+                    >
+                      {draft}
+                    </MarkdownText>
+                  </div>
+                ) : (
+                  <CodeBlock
+                    language={state.payload.language}
+                    code={draft}
+                    chrome="none"
+                    highlight
+                    showLineNumbers
+                    wrapLongLines={false}
+                    className="min-h-full"
+                  />
+                )}
               </div>
             )}
           </div>

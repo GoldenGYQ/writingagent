@@ -8,6 +8,7 @@ from pathlib import Path
 from typing import Any, cast
 
 from nanobot.agent.tools.base import ToolResult, tool_parameters
+from nanobot.agent.tools.file_mutation_policy import PlannedFileWrite
 from nanobot.agent.tools.filesystem import _FsTool  # pyright: ignore[reportPrivateUsage]
 from nanobot.agent.tools.schema import (
     ArraySchema,
@@ -266,6 +267,17 @@ class ApplyPatchTool(_FsTool):
             backups: dict[Path, bytes | None] = {}
             for path in writes:
                 backups[path] = path.read_bytes() if path.exists() else None
+
+            approval = await self._authorize_file_mutation(
+                tool_name=self.name,
+                arguments={"edits": edits, "dry_run": False},
+                writes=[
+                    PlannedFileWrite(path, backups[path], content.encode("utf-8"))
+                    for path, content in writes.items()
+                ],
+            )
+            if approval is not None:
+                return approval
 
             try:
                 for path, content in writes.items():

@@ -18,28 +18,36 @@ from nanobot.bus.events import InboundMessage
 from nanobot.bus.outbound_events import (
     GoalStateSyncEvent,
     GoalStatusEvent,
+    InteractionStateSyncEvent,
     RuntimeModelUpdatedEvent,
     SessionUpdatedEvent,
     TurnEndEvent,
     TurnModelUpdatedEvent,
+    WorkingPlanSyncEvent,
+    WritingArtifactSyncEvent,
     outbound_message_for_event,
 )
 from nanobot.bus.queue import MessageBus
 from nanobot.bus.runtime_events import (
     GoalStateChanged,
+    InteractionStateChanged,
     RuntimeEventBus,
     RuntimeEventContext,
     RuntimeModelChanged,
     SessionTurnStarted,
     TurnCompleted,
     TurnRunStatusChanged,
+    WorkingPlanChanged,
+    WritingArtifactChanged,
 )
 from nanobot.providers.base import LLMProvider
 from nanobot.providers.fallback_provider import FallbackModelObserver
 from nanobot.runtime_context import public_history_message
 from nanobot.session.goal_state import goal_state_ws_blob
 from nanobot.session.history_visibility import is_hidden_history_message
+from nanobot.session.interaction_state import interaction_ws_blob
 from nanobot.session.manager import Session, SessionManager
+from nanobot.session.working_plan import working_plan_ws_blob
 from nanobot.utils.helpers import strip_think, truncate_text
 from nanobot.utils.llm_runtime import LLMRuntime
 from nanobot.webui.metadata import (
@@ -489,6 +497,18 @@ class WebuiTurnCoordinator:
                 GoalStateChanged,
             ),
             runtime_events.subscribe(
+                self._handle_working_plan_changed,
+                WorkingPlanChanged,
+            ),
+            runtime_events.subscribe(
+                self._handle_interaction_state_changed,
+                InteractionStateChanged,
+            ),
+            runtime_events.subscribe(
+                self._handle_writing_artifact_changed,
+                WritingArtifactChanged,
+            ),
+            runtime_events.subscribe(
                 self._handle_runtime_model_changed,
                 RuntimeModelChanged,
             ),
@@ -558,6 +578,56 @@ class WebuiTurnCoordinator:
                 metadata=event.context.metadata,
             ),
         )
+
+    async def _handle_working_plan_changed(self, event: WorkingPlanChanged) -> None:
+        if not self._is_websocket_event(event.context):
+            return
+        await self.bus.publish_outbound(outbound_message_for_event(
+            channel=event.context.channel,
+            chat_id=event.context.chat_id,
+            event=WorkingPlanSyncEvent(
+                working_plan=working_plan_ws_blob(event.session_metadata),
+            ),
+            metadata=event.context.metadata,
+        ))
+
+    async def _handle_interaction_state_changed(self, event: InteractionStateChanged) -> None:
+        if not self._is_websocket_event(event.context):
+            return
+        await self.bus.publish_outbound(outbound_message_for_event(
+            channel=event.context.channel,
+            chat_id=event.context.chat_id,
+            event=InteractionStateSyncEvent(
+                interaction=interaction_ws_blob(event.session_metadata),
+            ),
+            metadata=event.context.metadata,
+        ))
+
+    async def _handle_writing_artifact_changed(self, event: WritingArtifactChanged) -> None:
+        if not self._is_websocket_event(event.context):
+            return
+        payload = {
+            "active": True,
+            "context": {
+                key: value
+                for key, value in {
+                    "project_id": event.project_id,
+                    "document_id": event.document_id,
+                    "chapter_id": event.chapter_id,
+                    "revision_id": (event.revision or {}).get("id") if event.revision else None,
+                }.items()
+                if isinstance(value, str) and value
+            },
+            "artifact": event.artifact,
+            "changeset": event.changeset,
+            "revision": event.revision,
+        }
+        await self.bus.publish_outbound(outbound_message_for_event(
+            channel=event.context.channel,
+            chat_id=event.context.chat_id,
+            event=WritingArtifactSyncEvent(writing=payload),
+            metadata=event.context.metadata,
+        ))
 
     async def _handle_runtime_model_changed(self, event: RuntimeModelChanged) -> None:
         await self.bus.publish_outbound(

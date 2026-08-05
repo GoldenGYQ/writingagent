@@ -50,9 +50,11 @@ _PROVIDER_STATE_RECORD_PREFIX_RE = re.compile(
 )
 _FORK_VOLATILE_METADATA_KEYS = {
     "goal_state",
+    "interaction_request",
     "pending_user_turn",
     "runtime_checkpoint",
     "thread_goal",
+    "working_plan",
     "title",
     "title_user_edited",
 }

@@ -17,6 +17,10 @@ import { Streamdown, type Components, type StreamdownProps } from "streamdown";
 import { AttachmentTile } from "@/components/AttachmentTile";
 import { CodeBlock } from "@/components/CodeBlock";
 import {
+  MarkdownMetadataCard,
+  parseMarkdownFrontmatter,
+} from "@/components/MarkdownMetadataCard";
+import {
   useFilePreviewAvailabilityResolver,
   type FilePreviewAvailabilityResolver,
 } from "@/components/FilePreviewAvailabilityContext";
@@ -40,6 +44,7 @@ interface MarkdownTextRendererProps {
   highlightCode?: boolean;
   streaming?: boolean;
   onOpenFilePreview?: (path: string) => void;
+  onOpenReference?: (reference: string) => void;
 }
 
 type MarkdownAstNode = {
@@ -486,6 +491,13 @@ function codeFenceFromPreChild(value: ReactNode): { code: string; language?: str
   };
 }
 
+function removeDuplicateFrontmatterTitle(body: string, title: string): string {
+  const heading = /^\s*#\s+([^\r\n]+)\s*(?:\r?\n|$)/.exec(body);
+  if (!heading) return body;
+  const headingTitle = heading[1].replace(/\s+#+\s*$/, "").trim();
+  return headingTitle === title.trim() ? body.slice(heading[0].length) : body;
+}
+
 /**
  * Heavy markdown stack (GFM, math, KaTeX, syntax highlighting) kept in a
  * separate chunk so the app shell can paint sooner on refresh.
@@ -496,8 +508,18 @@ export default function MarkdownTextRenderer({
   highlightCode = true,
   streaming = false,
   onOpenFilePreview,
+  onOpenReference,
 }: MarkdownTextRendererProps) {
   const { t } = useTranslation();
+  const parsedFrontmatter = useMemo(() => parseMarkdownFrontmatter(children), [children]);
+  const markdownBody = parsedFrontmatter
+    ? removeDuplicateFrontmatterTitle(
+      parsedFrontmatter.body,
+      typeof parsedFrontmatter.metadata.title === "string"
+        ? parsedFrontmatter.metadata.title
+        : "",
+    )
+    : children;
   const components = useMemo<Components>(
     () => ({
       code({ className: cls, children: kids, node: _node, ...props }) {
@@ -756,32 +778,41 @@ export default function MarkdownTextRenderer({
   );
 
   return (
-    <Streamdown
-      mode={streaming ? "streaming" : "static"}
-      parseIncompleteMarkdown
-      isAnimating={false}
-      animated={false}
-      linkSafety={DIRECT_LINKS}
-      urlTransform={safeMarkdownUrl}
-      remarkPlugins={remarkPlugins}
-      rehypePlugins={rehypePlugins}
-      components={components}
-      className={cn(
-        "markdown-content prose max-w-none dark:prose-invert",
-        "prose-headings:mt-4 prose-headings:mb-2 prose-headings:font-semibold prose-headings:tracking-tight",
-        "prose-h1:text-lg prose-h2:text-base prose-h3:text-sm prose-h4:text-[13px]",
-        "prose-p:my-2",
-        "prose-ul:my-2 prose-ol:my-2 prose-li:my-0.5",
-        "prose-blockquote:my-3 prose-blockquote:border-l-2 prose-blockquote:font-normal",
-        "prose-blockquote:not-italic prose-blockquote:text-foreground/80",
-        "prose-a:text-blue-500 prose-a:underline-offset-2 hover:prose-a:text-blue-600 dark:prose-a:text-blue-300 dark:hover:prose-a:text-blue-200",
-        "prose-hr:my-6",
-        "prose-pre:my-0 prose-pre:bg-transparent prose-pre:p-0",
-        "prose-code:before:content-none prose-code:after:content-none prose-code:font-normal",
-        className,
-      )}
-    >
-      {children}
-    </Streamdown>
+    <>
+      {parsedFrontmatter ? (
+        <MarkdownMetadataCard
+          metadata={parsedFrontmatter.metadata}
+          onOpenFilePreview={onOpenFilePreview}
+          onOpenReference={onOpenReference}
+        />
+      ) : null}
+      <Streamdown
+        mode={streaming ? "streaming" : "static"}
+        parseIncompleteMarkdown
+        isAnimating={false}
+        animated={false}
+        linkSafety={DIRECT_LINKS}
+        urlTransform={safeMarkdownUrl}
+        remarkPlugins={remarkPlugins}
+        rehypePlugins={rehypePlugins}
+        components={components}
+        className={cn(
+          "markdown-content prose max-w-none dark:prose-invert",
+          "prose-headings:mt-4 prose-headings:mb-2 prose-headings:font-semibold prose-headings:tracking-tight",
+          "prose-h1:text-lg prose-h2:text-base prose-h3:text-sm prose-h4:text-[13px]",
+          "prose-p:my-2",
+          "prose-ul:my-2 prose-ol:my-2 prose-li:my-0.5",
+          "prose-blockquote:my-3 prose-blockquote:border-l-2 prose-blockquote:font-normal",
+          "prose-blockquote:not-italic prose-blockquote:text-foreground/80",
+          "prose-a:text-blue-500 prose-a:underline-offset-2 hover:prose-a:text-blue-600 dark:prose-a:text-blue-300 dark:hover:prose-a:text-blue-200",
+          "prose-hr:my-6",
+          "prose-pre:my-0 prose-pre:bg-transparent prose-pre:p-0",
+          "prose-code:before:content-none prose-code:after:content-none prose-code:font-normal",
+          className,
+        )}
+      >
+        {markdownBody}
+      </Streamdown>
+    </>
   );
 }

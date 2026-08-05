@@ -104,6 +104,10 @@ class AgentRunSpec:
     workspace: Path | None = None
     session_key: str | None = None
     context_block_limit: int | None = None
+    # Optional override for in-flight result compaction.  ``None`` keeps the
+    # governor's conservative default for direct runner callers and tests;
+    # AgentLoop supplies the configured runtime value.
+    inflight_compaction_target_ratio: float | None = None
     provider_retry_mode: str = "standard"
     progress_callback: ProgressCallback | None = None
     stream_progress_deltas: bool = True
@@ -113,6 +117,7 @@ class AgentRunSpec:
     llm_timeout_s: float | None = None
     goal_active_predicate: Callable[[], bool] | None = None
     goal_continue_message: GoalContinueMessage | None = None
+    wait_for_user_predicate: Callable[[], bool] | None = None
     finalize_on_max_iterations: bool = True
     provider_state: ProviderConversationState | None = None
 
@@ -455,6 +460,7 @@ class AgentRunner:
             context_window_tokens=spec.runtime.context_window_tokens,
             context_block_limit=spec.context_block_limit,
             max_tokens=spec.runtime.generation.max_tokens,
+            inflight_compaction_target_ratio=spec.inflight_compaction_target_ratio,
             inflight_start_index=len(spec.initial_messages),
         )
 
@@ -612,6 +618,16 @@ class AgentRunner:
                 )
                 empty_content_retries = 0
                 length_recovery_parts.clear()
+                if (
+                    spec.wait_for_user_predicate is not None
+                    and spec.wait_for_user_predicate()
+                ):
+                    stop_reason = "waiting_for_user"
+                    final_content = ""
+                    context.final_content = final_content
+                    context.stop_reason = stop_reason
+                    await hook.after_iteration(context)
+                    break
                 # Checkpoint 1: drain injections after tools, before next LLM call
                 _drained, injection_cycles = await self._try_drain_injections(
                     spec, messages, None, injection_cycles,
@@ -1369,7 +1385,7 @@ class AgentRunner:
         context = context or AgentHookContext(iteration=0, messages=[])
         batches = self._partition_tool_batches(spec, tool_calls)
         tool_results: list[tuple[Any, dict[str, str], BaseException | None]] = []
-        for batch in batches:
+        for batch_index, batch in enumerate(batches):
             if spec.concurrent_tools and len(batch) > 1:
                 batch_results = await asyncio.gather(*(
                     self._run_tool(
@@ -1396,6 +1412,22 @@ class AgentRunner:
                     )
                     tool_results.append(result)
                     batch_results.append(result)
+            if (
+                spec.wait_for_user_predicate is not None
+                and spec.wait_for_user_predicate()
+            ):
+                for remaining_batch in batches[batch_index + 1:]:
+                    for remaining_call in remaining_batch:
+                        tool_results.append((
+                            "Skipped because the run is waiting for user input.",
+                            {
+                                "name": remaining_call.name,
+                                "status": "error",
+                                "detail": "waiting for user input",
+                            },
+                            None,
+                        ))
+                break
 
         results: list[Any] = []
         events: list[dict[str, str]] = []

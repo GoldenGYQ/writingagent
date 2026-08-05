@@ -9,8 +9,10 @@ from pathlib import Path
 from typing import Any, Literal, cast
 
 WorkspaceAccessMode = Literal["restricted", "full"]
+WorkspaceExecutionPolicy = Literal["read_only", "ask", "auto"]
 WORKSPACE_SCOPE_METADATA_KEY = "workspace_scope"
 _ACCESS_MODES = {"restricted", "full"}
+_EXECUTION_POLICIES = {"read_only", "ask", "auto"}
 
 _TRUE_VALUES = {"1", "true", "yes", "on", "enabled"}
 _FALSE_VALUES = {"0", "false", "no", "off", "disabled", ""}
@@ -68,6 +70,7 @@ class WorkspaceScope:
 
     project_path: Path
     access_mode: WorkspaceAccessMode
+    execution_policy: WorkspaceExecutionPolicy
     restrict_to_workspace: bool
     sandbox_status: WorkspaceSandboxStatus
     source_channel: str | None = None
@@ -80,6 +83,7 @@ class WorkspaceScope:
         return {
             "project_path": str(self.project_path),
             "access_mode": self.access_mode,
+            "execution_policy": self.execution_policy,
         }
 
     def payload(self) -> dict[str, Any]:
@@ -216,14 +220,17 @@ def build_workspace_scope(
     project_path: str | Path,
     access_mode: str,
     *,
+    execution_policy: str = "auto",
     source_channel: str | None = None,
 ) -> WorkspaceScope:
     mode = _normalize_access_mode(access_mode)
+    policy = _normalize_execution_policy(execution_policy)
     root = Path(project_path).expanduser().resolve(strict=False)
     restrict = mode == "restricted"
     return WorkspaceScope(
         project_path=root,
         access_mode=mode,
+        execution_policy=policy,
         restrict_to_workspace=restrict,
         sandbox_status=workspace_sandbox_status(
             restrict_to_workspace=restrict,
@@ -242,6 +249,7 @@ def default_workspace_scope(
     return build_workspace_scope(
         workspace,
         default_access_mode(restrict_to_workspace),
+        execution_policy="auto",
         source_channel=source_channel,
     )
 
@@ -284,7 +292,15 @@ def validate_workspace_scope_payload(
         raw_mode = default_access_mode(default_restrict_to_workspace)
     if not isinstance(raw_mode, str):
         raise WorkspaceScopeError("access_mode must be a string")
-    return build_workspace_scope(project, raw_mode, source_channel=source_channel)
+    raw_policy = scope_data.get("execution_policy", "auto")
+    if not isinstance(raw_policy, str):
+        raise WorkspaceScopeError("execution_policy must be a string")
+    return build_workspace_scope(
+        project,
+        raw_mode,
+        execution_policy=raw_policy,
+        source_channel=source_channel,
+    )
 
 
 def workspace_scope_from_metadata(
@@ -432,3 +448,16 @@ def _normalize_access_mode(value: str) -> WorkspaceAccessMode:
     if mode not in _ACCESS_MODES:
         raise WorkspaceScopeError("access_mode must be restricted or full")
     return mode  # type: ignore[return-value]
+
+
+def _normalize_execution_policy(value: str) -> WorkspaceExecutionPolicy:
+    policy = value.strip().lower().replace("-", "_").replace(" ", "_")
+    aliases = {
+        "readonly": "read_only",
+        "ask_before_apply": "ask",
+        "auto_apply": "auto",
+    }
+    policy = aliases.get(policy, policy)
+    if policy not in _EXECUTION_POLICIES:
+        raise WorkspaceScopeError("execution_policy must be read_only, ask, or auto")
+    return cast(WorkspaceExecutionPolicy, policy)

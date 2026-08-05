@@ -1,10 +1,66 @@
-import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 
 import { FilePreviewAvailabilityProvider } from "@/components/FilePreviewAvailabilityContext";
 import MarkdownTextRenderer from "@/components/MarkdownTextRenderer";
 
 describe("MarkdownTextRenderer", () => {
+  it("renders Knowledge frontmatter as an interactive metadata card", () => {
+    const onOpenFilePreview = vi.fn();
+    const onOpenReference = vi.fn();
+    render(
+      <MarkdownTextRenderer
+        onOpenFilePreview={onOpenFilePreview}
+        onOpenReference={onOpenReference}
+      >
+        {`---
+type: entity
+title: "AgentSpec"
+tags: ["wotagent", "MCP Scope"]
+related: ["AgentRegistry", "Run"]
+sources: ["raw/sources/doc/API_GUIDE.md"]
+created: 2026-08-04
+updated: 2026-08-05
+url: https://example.com/agentspec
+---
+
+# AgentSpec
+
+Knowledge body.`}
+      </MarkdownTextRenderer>,
+    );
+
+    const card = screen.getByTestId("markdown-metadata-card");
+    expect(card).toBeInTheDocument();
+    expect(within(card).getByRole("heading", { name: "AgentSpec" })).toBeInTheDocument();
+    expect(screen.getByText("ENTITY")).toBeInTheDocument();
+    expect(screen.getByText("MCP Scope")).toBeInTheDocument();
+    expect(screen.getByText("Knowledge body.")).toBeInTheDocument();
+    expect(screen.getAllByText("AgentSpec")).toHaveLength(1);
+
+    fireEvent.click(screen.getByRole("button", { name: /Open source raw\/sources\/doc\/API_GUIDE\.md/i }));
+    expect(onOpenFilePreview).toHaveBeenCalledWith("raw/sources/doc/API_GUIDE.md");
+    fireEvent.click(screen.getByRole("button", { name: /Open related AgentRegistry/i }));
+    expect(onOpenReference).toHaveBeenCalledWith("AgentRegistry");
+    expect(screen.getByRole("link", { name: "https://example.com/agentspec" })).toHaveAttribute(
+      "target",
+      "_blank",
+    );
+  });
+
+  it("does not treat an unfinished frontmatter block as document metadata", () => {
+    render(
+      <MarkdownTextRenderer streaming>
+        {`---
+type: entity
+title: "Still streaming"`}
+      </MarkdownTextRenderer>,
+    );
+
+    expect(screen.queryByTestId("markdown-metadata-card")).not.toBeInTheDocument();
+    expect(screen.getByText(/Still streaming/)).toBeInTheDocument();
+  });
+
   it("renders clickable markdown links in blue", () => {
     render(<MarkdownTextRenderer>[local server](http://127.0.0.1:7891/)</MarkdownTextRenderer>);
 

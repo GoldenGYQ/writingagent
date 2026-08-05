@@ -12,6 +12,7 @@ import { Moon, PanelLeft, ShieldCheck, Sun, X } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { channelUiPresentation } from "@/channel-plugins/registry";
 import { Sidebar } from "@/components/Sidebar";
+import { WikiView } from "@/components/wiki/WikiView";
 import type { SettingsSectionKey } from "@/components/settings/SettingsView";
 import { ThreadShell } from "@/components/thread/ThreadShell";
 import { Sheet, SheetContent, SheetTitle } from "@/components/ui/sheet";
@@ -90,7 +91,7 @@ const TOKEN_REFRESH_MIN_DELAY_MS = 5_000;
 const PAIRING_POLL_INTERVAL_MS = 5_000;
 const PAIRING_IDLE_POLL_INTERVAL_MS = 15_000;
 const PAIRING_DISMISS_SNOOZE_MS = 30_000;
-type ShellView = "chat" | "settings" | "apps" | "automations" | "skills";
+type ShellView = "chat" | "settings" | "apps" | "automations" | "skills" | "wiki";
 type ShellRoute = {
   view: ShellView;
   activeKey: string | null;
@@ -224,6 +225,9 @@ function readShellRoute(): ShellRoute {
   }
   if (path === "/skills") {
     return { view: "skills", activeKey, settingsSection: "skills" };
+  }
+  if (path === "/wiki") {
+    return { view: "wiki", activeKey, settingsSection: "overview" };
   }
   if (path.startsWith("/chat/")) {
     const encoded = path.slice("/chat/".length);
@@ -374,10 +378,15 @@ function writeSessionUpdateChatIds(chatIds: Set<string>): void {
 
 function normalizeWorkspaceScope(scope: WorkspaceScopePayload): WorkspaceScopePayload {
   const accessMode = scope.access_mode === "restricted" ? "restricted" : "full";
+  const rawExecutionPolicy = scope.execution_policy;
+  const executionPolicy = rawExecutionPolicy && ["read_only", "ask", "auto"].includes(rawExecutionPolicy)
+    ? rawExecutionPolicy
+    : "auto";
   return {
     ...scope,
     project_name: scope.project_name ?? projectNameFromPath(scope.project_path),
     access_mode: accessMode,
+    execution_policy: executionPolicy,
     restrict_to_workspace: accessMode === "restricted",
   };
 }
@@ -1430,6 +1439,7 @@ function Shell({
         project_path: trimmed,
         project_name: projectName || projectNameFromPath(trimmed),
         access_mode: base.access_mode,
+        execution_policy: base.execution_policy ?? "auto",
         restrict_to_workspace: base.access_mode === "restricted",
       }));
       setWorkspaceError(null);
@@ -1667,6 +1677,12 @@ function Shell({
     setMobileSidebarOpen(false);
   }, [activeKey, navigate]);
 
+  const onOpenWiki = useCallback(() => {
+    setSessionSearchOpen(false);
+    navigate({ view: "wiki", activeKey, settingsSection: "overview" });
+    setMobileSidebarOpen(false);
+  }, [activeKey, navigate]);
+
   const onSettingsSectionChange = useCallback(
     (section: SettingsSectionKey) => {
       navigate({
@@ -1894,6 +1910,12 @@ function Shell({
       });
       return;
     }
+    if (view === "wiki") {
+      document.title = t("app.documentTitle.chat", {
+        title: t("sidebar.wiki", { defaultValue: "Wiki" }),
+      });
+      return;
+    }
     document.title = activeSession
       ? t("app.documentTitle.chat", { title: headerTitle })
       : t("app.documentTitle.base");
@@ -1916,9 +1938,10 @@ function Shell({
     onOpenApps,
     onOpenAutomations,
     onOpenSkills,
+    onOpenWiki,
     onSettingsIntent,
     onOpenSearch: onOpenSessionSearch,
-    activeUtility: view === "apps" || view === "automations" || view === "skills" ? view : null,
+    activeUtility: view === "apps" || view === "automations" || view === "skills" || view === "wiki" ? view : null,
     onToggleArchived,
     pinnedKeys: sidebarState.pinned_keys,
     archivedKeys: sidebarState.archived_keys,
@@ -2108,7 +2131,7 @@ function Shell({
                 skills={skills}
               />
             </div>
-            {view !== "chat" && (
+            {view !== "chat" && view !== "wiki" && (
               <div className="absolute inset-0 flex flex-col">
                 <Suspense fallback={<SurfaceLoadingFallback />}>
                   <SettingsView
@@ -2130,6 +2153,14 @@ function Shell({
                     hostChromeInset={showHostChrome}
                   />
                 </Suspense>
+              </div>
+            )}
+            {view === "wiki" && (
+              <div className="absolute inset-0 flex flex-col">
+                <WikiView
+                  sessionKey={activeSession?.key ?? sessions[0]?.key ?? null}
+                  onBackToChat={onBackToChat}
+                />
               </div>
             )}
           </main>

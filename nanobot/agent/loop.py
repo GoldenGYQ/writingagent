@@ -73,6 +73,7 @@ from nanobot.session.goal_state import (
     sustained_goal_active,
 )
 from nanobot.session.history_visibility import HIDDEN_HISTORY_META
+from nanobot.session.interaction_state import waiting_for_user
 from nanobot.session.keys import UNIFIED_SESSION_KEY, remember_last_channel
 from nanobot.session.manager import (
     Session,
@@ -259,6 +260,7 @@ class AgentLoop:
         context_window_tokens: int | None = None,
         context_block_limit: int | None = None,
         max_tool_result_chars: int | None = None,
+        inflight_compaction_target_ratio: float | None = None,
         fail_on_tool_error: bool | None = None,
         provider_retry_mode: str = "standard",
         tool_hint_max_length: int | None = None,
@@ -343,6 +345,11 @@ class AgentLoop:
             max_tool_result_chars
             if max_tool_result_chars is not None
             else defaults.max_tool_result_chars
+        )
+        self.inflight_compaction_target_ratio = (
+            inflight_compaction_target_ratio
+            if inflight_compaction_target_ratio is not None
+            else defaults.inflight_compaction_target_ratio
         )
         self.provider_retry_mode = provider_retry_mode
         self.tool_hint_max_length = (
@@ -488,6 +495,7 @@ class AgentLoop:
             context_window_tokens=context_window_tokens,
             context_block_limit=defaults.context_block_limit,
             max_tool_result_chars=defaults.max_tool_result_chars,
+            inflight_compaction_target_ratio=defaults.inflight_compaction_target_ratio,
             fail_on_tool_error=defaults.fail_on_tool_error,
             provider_retry_mode=defaults.provider_retry_mode,
             tool_hint_max_length=defaults.tool_hint_max_length,
@@ -1065,6 +1073,7 @@ class AgentLoop:
                 workspace=effective_scope.project_path,
                 session_key=session.key if session else None,
                 context_block_limit=self.context_block_limit,
+                inflight_compaction_target_ratio=self.inflight_compaction_target_ratio,
                 provider_retry_mode=self.provider_retry_mode,
                 progress_callback=on_progress,
                 stream_progress_deltas=on_stream is not None,
@@ -1081,6 +1090,7 @@ class AgentLoop:
                 ),
                 goal_active_predicate=lambda: sustained_goal_active(session.metadata) if session is not None else False,
                 goal_continue_message=_goal_continue,
+                wait_for_user_predicate=lambda: waiting_for_user(session.metadata) if session is not None else False,
                 finalize_on_max_iterations=turn_continuation.should_finalize_on_max_iterations(
                     pending_queue_available=pending_queue is not None and session is not None,
                     session_metadata=session_metadata,
@@ -1803,6 +1813,8 @@ class AgentLoop:
         ctx.all_messages = all_msgs
         ctx.stop_reason = stop_reason
         ctx.had_injections = had_injections
+        if stop_reason == "waiting_for_user":
+            ctx.suppress_response = True
         if ctx.kind is TurnKind.USER:
             await turn_continuation.maybe_continue_turn(ctx)
 

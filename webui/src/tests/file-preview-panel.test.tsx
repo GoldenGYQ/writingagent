@@ -35,6 +35,26 @@ vi.mock("@/components/CodeBlock", () => ({
   ),
 }));
 
+vi.mock("@/components/MarkdownText", () => ({
+  MarkdownText: ({ children }: { children: string }) => <div data-testid="mock-markdown-text">{children}</div>,
+}));
+
+vi.mock("@/components/SourceEditor", () => ({
+  SourceEditor: ({
+    value,
+    onChange,
+  }: {
+    value: string;
+    onChange: (value: string) => void;
+  }) => (
+    <textarea
+      data-testid="source-editor"
+      value={value}
+      onChange={(event) => onChange(event.target.value)}
+    />
+  ),
+}));
+
 vi.mock("@/lib/api", async (importOriginal) => {
   const actual = await importOriginal<typeof import("@/lib/api")>();
   return {
@@ -161,7 +181,7 @@ describe("FilePreviewPanel", () => {
       />,
     );
 
-    await screen.findByTestId("mock-code-block");
+    await screen.findByTestId("mock-markdown-text");
     expect(fetchFilePreview).toHaveBeenCalledTimes(1);
 
     await act(async () => {
@@ -169,5 +189,49 @@ describe("FilePreviewPanel", () => {
     });
 
     expect(fetchFilePreview).toHaveBeenCalledTimes(1);
+  });
+
+  it("saves source edits through the Writing ChangeSet callback", async () => {
+    const user = userEvent.setup();
+    const onSaveContent = vi.fn().mockResolvedValue({
+      request_id: "req-1",
+      chat_id: "chat-1",
+      ok: true,
+      status: "review",
+      changeset: { id: "changeset-1" },
+      revision: null,
+    });
+    vi.mocked(fetchFilePreview).mockResolvedValue({
+      path: "/workspace/writing/project-1/documents/doc-1/chapters/chapter-1.md",
+      display_path: "writing/project-1/documents/doc-1/chapters/chapter-1.md",
+      language: "markdown",
+      content: "# Draft",
+      truncated: false,
+    });
+
+    render(
+      <FilePreviewPanel
+        sessionKey="websocket:chat-1"
+        path="writing/project-1/documents/doc-1/chapters/chapter-1.md"
+        token="tok"
+        onClose={() => {}}
+        onSaveContent={onSaveContent}
+      />,
+    );
+
+    await screen.findByTestId("mock-markdown-text");
+    await user.click(screen.getByRole("tab", { name: /source/i }));
+    const editor = screen.getByTestId("source-editor");
+    await user.clear(editor);
+    await user.type(editor, "# Revised");
+    await user.click(screen.getByRole("button", { name: /^save$/i }));
+
+    await waitFor(() => expect(onSaveContent).toHaveBeenCalledWith({
+      path: "/workspace/writing/project-1/documents/doc-1/chapters/chapter-1.md",
+      content: "# Revised",
+      reason: "Edit from WebUI source editor",
+    }));
+    expect(await screen.findByText("ChangeSet pending approval")).toBeVisible();
+    expect(screen.getByTestId("mock-markdown-text")).toHaveTextContent("# Revised");
   });
 });

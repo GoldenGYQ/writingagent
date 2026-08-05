@@ -9,6 +9,7 @@ import type {
   GoalStateWsPayload,
   InteractionRequestPayload,
   WorkingPlanPayload,
+  WritingChangeSetResult,
   WorkspaceScopePayload,
 } from "./types";
 import { createHostWebSocket } from "./runtime";
@@ -199,6 +200,7 @@ export class NanobotClient {
   private interactionByChatId = new Map<string, InteractionRequestPayload>();
   private pendingNewChat: PendingRequest<string> | null = null;
   private pendingTranscriptions = new Map<string, PendingRequest<string>>();
+  private pendingWritingChangeSets = new Map<string, PendingRequest<WritingChangeSetResult>>();
   private pendingSystemCommands = new Map<string, PendingRequest<void>>();
   // Frames queued while the socket is not yet OPEN
   private sendQueue: Outbound[] = [];
@@ -875,6 +877,30 @@ export class NanobotClient {
     });
   }
 
+  proposeWritingChangeSet(
+    chatId: string,
+    payload: { path: string; content: string; reason?: string },
+    timeoutMs: number = 30_000,
+  ): Promise<WritingChangeSetResult> {
+    const requestId = crypto.randomUUID();
+    return new Promise<WritingChangeSetResult>((resolve, reject) => {
+      const timer = setTimeout(() => {
+        this.pendingWritingChangeSets.delete(requestId);
+        reject(new Error("writing changeset timed out"));
+      }, timeoutMs);
+      this.pendingWritingChangeSets.set(requestId, { resolve, reject, timer });
+      this.knownChats.add(chatId);
+      this.queueSend({
+        type: "writing_changeset_propose",
+        chat_id: chatId,
+        request_id: requestId,
+        path: payload.path,
+        content: payload.content,
+        ...(payload.reason?.trim() ? { reason: payload.reason.trim() } : {}),
+      });
+    });
+  }
+
   respondToInteraction(
     chatId: string,
     interactionId: string,
@@ -1036,6 +1062,11 @@ export class NanobotClient {
       return;
     }
 
+    if (parsed.event === "writing_changeset_result") {
+      this.resolveWritingChangeSet(parsed.request_id, parsed);
+      return;
+    }
+
     if (parsed.event === "session_updated") {
       this.emitSessionUpdate(parsed.chat_id, parsed.scope, parsed.workspace_scope);
       return;
@@ -1130,6 +1161,7 @@ export class NanobotClient {
       this.pendingNewChat = null;
     }
     this.rejectAllTranscriptions("socket closed");
+    this.rejectAllWritingChangeSets("socket closed");
     for (const pending of this.pendingSystemCommands.values()) {
       clearTimeout(pending.timer);
       pending.reject(new Error("socket closed"));
@@ -1223,6 +1255,23 @@ export class NanobotClient {
       clearTimeout(pending.timer);
       pending.reject(new Error(detail));
       this.pendingTranscriptions.delete(requestId);
+    }
+  }
+
+  private resolveWritingChangeSet(requestId: string, result: WritingChangeSetResult): void {
+    const pending = this.pendingWritingChangeSets.get(requestId);
+    if (!pending) return;
+    clearTimeout(pending.timer);
+    this.pendingWritingChangeSets.delete(requestId);
+    if (result.ok) pending.resolve(result);
+    else pending.reject(new Error(result.error || "writing changeset failed"));
+  }
+
+  private rejectAllWritingChangeSets(detail: string): void {
+    for (const [requestId, pending] of this.pendingWritingChangeSets) {
+      clearTimeout(pending.timer);
+      pending.reject(new Error(detail));
+      this.pendingWritingChangeSets.delete(requestId);
     }
   }
 

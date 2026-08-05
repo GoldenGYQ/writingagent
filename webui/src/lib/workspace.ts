@@ -1,4 +1,8 @@
-import type { WorkspaceAccessMode, WorkspaceScopePayload } from "@/lib/types";
+import type {
+  WorkspaceAccessMode,
+  WorkspaceExecutionPolicy,
+  WorkspaceScopePayload,
+} from "@/lib/types";
 
 export function scopeWithAccessMode(
   scope: WorkspaceScopePayload,
@@ -9,6 +13,13 @@ export function scopeWithAccessMode(
     access_mode: accessMode,
     restrict_to_workspace: accessMode === "restricted",
   };
+}
+
+export function scopeWithExecutionPolicy(
+  scope: WorkspaceScopePayload,
+  executionPolicy: WorkspaceExecutionPolicy,
+): WorkspaceScopePayload {
+  return { ...scope, execution_policy: executionPolicy };
 }
 
 export function projectNameFromPath(path: string): string {

@@ -32,9 +32,11 @@ _WEBUI_SCOPE_CHANNEL = "websocket"
 
 def _scope_change_is_non_escalating(current: WorkspaceScope, requested: WorkspaceScope) -> bool:
     """Allow a remote request only when it keeps the project and does not add access."""
+    policy_rank = {"read_only": 0, "ask": 1, "auto": 2}
     return (
         requested.project_path == current.project_path
         and (not current.restrict_to_workspace or requested.restrict_to_workspace)
+        and policy_rank[requested.execution_policy] <= policy_rank[current.execution_policy]
     )
 
 

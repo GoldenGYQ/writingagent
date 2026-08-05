@@ -17,6 +17,7 @@ from nanobot.session.goal_state import (
     sustained_goal_active,
     sustained_goal_turn,
 )
+from nanobot.session.interaction_state import waiting_for_user
 
 if TYPE_CHECKING:
     from nanobot.agent.loop import TurnContext
@@ -207,6 +208,8 @@ def _goal_continuation_available(
     message_metadata: Mapping[str, Any] | None = None,
     max_rounds: int = _MAX_GOAL_CONTINUATION_ROUNDS,
 ) -> bool:
+    if waiting_for_user(session_metadata):
+        return False
     if not sustained_goal_turn(session_metadata, message_metadata=message_metadata):
         return False
     if not sustained_goal_active(session_metadata):

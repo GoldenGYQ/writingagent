@@ -13,6 +13,7 @@ from nanobot.agent.hook import (
     AgentTurnHookContext,
 )
 from nanobot.providers.base import ToolCallRequest
+from nanobot.security.workspace_access import current_workspace_scope
 from nanobot.utils.file_edit_events import (
     FileEditTracker,
     build_file_edit_end_event,
@@ -43,9 +44,11 @@ class FileEditActivityHook(AgentHook):
         )
         self._workspace = workspace
         self._trackers_by_call: dict[str, list[FileEditTracker]] = {}
+        self._deferred_calls: set[str] = set()
 
     async def before_iteration(self, context: AgentHookContext) -> None:
         self._trackers_by_call.clear()
+        self._deferred_calls.clear()
 
     async def before_execute_tool(
         self,
@@ -66,7 +69,12 @@ class FileEditActivityHook(AgentHook):
         )
         if not trackers:
             return
-        self._trackers_by_call[self._tool_call_key(tool_call)] = trackers
+        key = self._tool_call_key(tool_call)
+        self._trackers_by_call[key] = trackers
+        scope = current_workspace_scope()
+        if scope is not None and scope.execution_policy != "auto":
+            self._deferred_calls.add(key)
+            return
         await self._emit([
             build_file_edit_start_event(tracker, typed_params)
             for tracker in trackers
@@ -83,8 +91,14 @@ class FileEditActivityHook(AgentHook):
         key = self._tool_call_key(tool_call)
         trackers = self._trackers_by_call.get(key, [])
         if trackers:
-            await self._emit([build_file_edit_end_event(tracker) for tracker in trackers])
+            typed_params = cast(dict[str, Any], params) if isinstance(params, dict) else {}
+            events = []
+            if key in self._deferred_calls:
+                events.extend(build_file_edit_start_event(tracker, typed_params) for tracker in trackers)
+            events.extend(build_file_edit_end_event(tracker) for tracker in trackers)
+            await self._emit(events)
             self._trackers_by_call.pop(key, None)
+            self._deferred_calls.discard(key)
 
     async def on_execute_tool_error(
         self,
@@ -97,10 +111,19 @@ class FileEditActivityHook(AgentHook):
         key = self._tool_call_key(tool_call)
         trackers = self._trackers_by_call.get(key, [])
         if trackers:
-            await self._emit([
-                build_file_edit_error_event(tracker, str(error)) for tracker in trackers
-            ])
+            error_text = str(error)
+            if key in self._deferred_calls and self._is_policy_control_result(error_text):
+                self._trackers_by_call.pop(key, None)
+                self._deferred_calls.discard(key)
+                return
+            typed_params = cast(dict[str, Any], params) if isinstance(params, dict) else {}
+            events = []
+            if key in self._deferred_calls:
+                events.extend(build_file_edit_start_event(tracker, typed_params) for tracker in trackers)
+            events.extend(build_file_edit_error_event(tracker, error_text) for tracker in trackers)
+            await self._emit(events)
             self._trackers_by_call.pop(key, None)
+            self._deferred_calls.discard(key)
 
     async def on_finally(self, context: AgentRunHookContext) -> None:
         if context.stop_reason != "cancelled" or not self._trackers_by_call:
@@ -111,6 +134,7 @@ class FileEditActivityHook(AgentHook):
             for tracker in trackers
         ]
         self._trackers_by_call.clear()
+        self._deferred_calls.clear()
         await self._emit([
             build_file_edit_error_event(
                 tracker,
@@ -127,6 +151,15 @@ class FileEditActivityHook(AgentHook):
     def _tool_call_key(tool_call: ToolCallRequest) -> str:
         call_id = getattr(tool_call, "id", "") or ""
         return f"{call_id}|{tool_call.name}" if call_id else f"{id(tool_call)}|{tool_call.name}"
+
+    @staticmethod
+    def _is_policy_control_result(value: str) -> bool:
+        return any(marker in value for marker in (
+            "Approval required for proposed file change",
+            "File mutation blocked by Read-only execution policy",
+            "User rejected this file change",
+            "Approved file change has already been consumed",
+        ))
 
 
 def create_file_edit_activity_hook(context: AgentTurnHookContext) -> AgentHook | None:

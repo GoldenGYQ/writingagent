@@ -87,6 +87,9 @@ from nanobot.webui.metadata import (
 from nanobot.webui.transcript import WEBUI_TRANSCRIPT_INCOMPLETE_KEY
 from nanobot.webui.transcription_ws import webui_transcription_event
 from nanobot.webui.websocket_logging import websockets_server_logger
+from nanobot.writing.context import writing_context_raw
+from nanobot.writing.file_edit import WritingFileEditError, propose_file_changeset
+from nanobot.writing.store import WritingNotFoundError, WritingStore, WritingStoreError
 
 # Plain HTTP WebUI routes also run through websockets.process_request.
 _WEBUI_HTTP_OPEN_TIMEOUT_S = 360.0
@@ -712,6 +715,9 @@ class WebSocketChannel(BaseChannel):
             event, payload = await webui_transcription_event(envelope)
             await self._send_event(connection, event, **payload)
             return
+        if t == "writing_changeset_propose":
+            await self._handle_writing_changeset_propose(connection, client_id, envelope)
+            return
         if t == "interaction_response":
             cid = envelope.get("chat_id")
             interaction_id = envelope.get("interaction_id")
@@ -964,6 +970,71 @@ class WebSocketChannel(BaseChannel):
                 )
             return
         await self._send_event(connection, "error", detail=f"unknown type: {t!r}")
+
+    async def _handle_writing_changeset_propose(
+        self,
+        connection: ServerConnection,
+        client_id: str,
+        envelope: dict[str, Any],
+    ) -> None:
+        """Persist a WebUI source edit as a managed Writing ChangeSet."""
+        chat_id = envelope.get("chat_id")
+        request_id = envelope.get("request_id")
+        path = envelope.get("path")
+        content = envelope.get("content")
+        if not _is_valid_chat_id(chat_id) or not isinstance(request_id, str) or not request_id:
+            await self._send_event(connection, "error", detail="invalid writing changeset request")
+            return
+
+        async def result(**fields: Any) -> None:
+            await self._send_event(
+                connection,
+                "writing_changeset_result",
+                chat_id=chat_id,
+                request_id=request_id,
+                **fields,
+            )
+
+        if not self.is_allowed(client_id):
+            await result(ok=False, status="error", error="access_denied")
+            return
+        if not isinstance(path, str) or not path.strip() or not isinstance(content, str):
+            await result(ok=False, status="error", error="path and content are required")
+            return
+        manager = self.gateway.session_manager
+        if manager is None:
+            await result(ok=False, status="error", error="session manager unavailable")
+            return
+
+        session_key = f"websocket:{chat_id}"
+        session = manager.get_or_create(session_key)
+        scope = self._workspaces.scope_for_session_key(session_key)
+        context = writing_context_raw(session.metadata)
+        reason = envelope.get("reason") if isinstance(envelope.get("reason"), str) else ""
+        try:
+            payload = propose_file_changeset(
+                WritingStore(scope.project_path),
+                raw_path=path,
+                content=content,
+                context=context,
+                execution_policy=scope.execution_policy,
+                reason=reason.strip() or "Edit from WebUI source editor",
+                author="user",
+            )
+        except (WritingFileEditError, WritingNotFoundError, WritingStoreError, ValueError) as exc:
+            await result(ok=False, status="error", error=str(exc))
+            return
+
+        new_context = payload.get("context")
+        if isinstance(new_context, dict):
+            session.metadata["writing_context"] = dict(cast(dict[str, str], new_context))
+            manager.save(session)
+        await result(
+            ok=True,
+            status=payload.get("status", "review"),
+            changeset=payload.get("changeset"),
+            revision=payload.get("revision"),
+        )
 
     async def _workspace_scope_or_error(
         self,

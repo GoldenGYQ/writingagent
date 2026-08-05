@@ -488,6 +488,66 @@ describe("ThreadShell", () => {
     expect(onGoHome).not.toHaveBeenCalled();
   });
 
+  it("keeps a completed plan folded until the next user query", async () => {
+    const client = makeClient();
+    render(wrap(
+      client,
+      <ThreadShell
+        session={session("plan-lifecycle")}
+        title="Plan lifecycle"
+        onToggleSidebar={() => {}}
+      />,
+    ));
+
+    await act(async () => {
+      client._emitChat("plan-lifecycle", {
+        event: "working_plan",
+        chat_id: "plan-lifecycle",
+        working_plan: {
+          id: "plan-1",
+          version: 1,
+          kind: "general",
+          status: "active",
+          title: "Plan lifecycle",
+          steps: [
+            { id: "one", title: "First plan step", status: "completed" },
+            { id: "two", title: "Second plan step", status: "in_progress" },
+          ],
+        },
+      });
+    });
+    expect(await screen.findByText("First plan step")).toBeInTheDocument();
+    expect(screen.getByText("Second plan step")).toBeInTheDocument();
+
+    await act(async () => {
+      client._emitChat("plan-lifecycle", {
+        event: "working_plan",
+        chat_id: "plan-lifecycle",
+        working_plan: {
+          id: "plan-1",
+          version: 2,
+          kind: "general",
+          status: "completed",
+          title: "Plan lifecycle",
+          steps: [
+            { id: "one", title: "First plan step", status: "completed" },
+            { id: "two", title: "Second plan step", status: "completed" },
+          ],
+        },
+      });
+    });
+    expect(screen.getByText("已完成 · 2/2 个步骤")).toBeInTheDocument();
+    expect(screen.queryByText("First plan step")).not.toBeInTheDocument();
+
+    fireEvent.change(screen.getByLabelText("Message input"), {
+      target: { value: "Start another query" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Send message" }));
+
+    await waitFor(() => expect(client.sendMessage).toHaveBeenCalledTimes(1));
+    expect(screen.queryByTestId("working-plan-card")).not.toBeInTheDocument();
+  });
+
   it("updates the composer model logo when settings snapshot changes", async () => {
     const client = makeClient();
     const { rerender } = render(

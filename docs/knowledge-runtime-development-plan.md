@@ -67,7 +67,7 @@ Knowledge Service（核心逻辑）
 
 本轮完成了 MVP 的 durable pipeline：`scan → extract(IR) → compile(wiki + graph) → validate/review → publish`，
 并完成了 source manifest 的 ingestion adapter 契约；Knowledge 仍是 Workspace 级能力，不拆成独立 Agent。
-`knowledge_validate` 会持久化 Review 结果；验证失败时不会发布。`/knowledge` 只初始化项目/任务元数据并授权 Agent 通过 `create_goal` 建立领域 Goal，不隐藏扫描、抽取或编译；WebUI 仅增加知识项目摘要与快捷入口，不改变 Conversation/Agent Timeline 的既有布局。
+`knowledge_validate` 会持久化 Review 结果；验证失败时不会发布。`/knowledge` 只初始化项目/任务元数据并授权 Agent 通过 `create_goal` 建立领域 Goal，不隐藏扫描、抽取或编译；WebUI 通过独立 Wiki 页面提供项目、知识/文件导航、Graph 与文件预览，但不改变 Conversation/Agent Timeline 的既有布局。
 `knowledge/task.json` 保存任务阶段、状态、待处理/已处理来源，Runtime Context 只在知识任务或显式选择项目时读取它。
 
 Writing Agent 集成已完成后端第一步：`knowledge_search` 会返回并在会话中保存有界 citations；当当前请求选中了同一 Knowledge project 且 `writing_changeset` 未显式传入 `sources` 时，ChangeSet 会自动携带最近检索的 citations。Writing Runtime Context 只注入选中项目标识和引用数量，不注入整段知识内容。
@@ -75,13 +75,17 @@ Writing Agent 集成已完成后端第一步：`knowledge_search` 会返回并�
 ## 下一步
 
 - [x] 将 Knowledge Workspace 扩展为可折叠的 Raw / IR / Wiki / Graph 分组视图；继续复用现有 Workspace 与 FilePreviewPanel。
+- [x] Wiki 独立页面改为项目下拉选择，并提供“知识 / 文件”两种页面导航模式；Graph 与文件预览保持同级联动，不改变 Conversation / Agent Timeline 布局。
+- [x] Graph G1 交互：按连接度缩放节点、可调布局参数、悬停高亮一阶邻域与关系边、节点搜索聚焦，以及节点到对应 Wiki 文件的预览联动。
+- [x] Graph G2/G3 核心交互：按知识类型提供社区颜色与筛选、关系边悬停提示、平滑布局与搜索聚焦、节点右键菜单、邻域范围切换，以及 Mini Map。
+- [x] Graph 关系无向化：合并同一对节点的正反向关系、最多保留三种关系标签、忽略自环、移除方向箭头；连接度和展示计数均基于去重后的无向边。
 - [x] 后端将引用片段映射为统一的 `path + start_line + end_line + quote`，并由 `knowledge_search` 返回可供写作 Agent 复用的 source citations。
 - [x] 将最近一次选中知识库检索的 citations 接入 `writing_changeset.sources`，并按 Knowledge project id 防止跨库污染。
 - [ ] 完成浏览器端多行引用的手动验收，并确认引用卡片在下一条消息中稳定回传。
 - [ ] 完成 PDF/网页/OCR 的实际解析适配器（当前已完成 manifest 契约与 raw 镜像，抽取仍由
   Agent 按契约调用 bounded reader 后提交 IR）。
 - [ ] 评估向量检索和 GraphRAG；在证据链、权限边界和可观察性稳定前不全量注入 wiki。
-- [ ] 后续再评估 Graph/Wiki 的高级可视化；不引入独立 Knowledge Agent 或多 Agent 协作。
+- [ ] 后续再评估 Graph/Wiki 的高级可视化：真正的算法社区聚类、时间轴、HTML/Compound Node、WebGL 大图渲染；当前不引入独立 Knowledge Agent 或多 Agent 协作。
 
 ## 已知门禁问题
 

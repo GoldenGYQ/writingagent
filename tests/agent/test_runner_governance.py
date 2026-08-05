@@ -41,6 +41,7 @@ def _governance_config(
         context_window_tokens=spec.runtime.context_window_tokens,
         context_block_limit=spec.context_block_limit,
         max_tokens=spec.runtime.generation.max_tokens,
+        inflight_compaction_target_ratio=spec.inflight_compaction_target_ratio,
         inflight_start_index=inflight_start_index,
     )
 
@@ -568,6 +569,50 @@ def test_microcompact_overflow_compacts_to_low_watermark(monkeypatch):
     assert len(compacted) == 8
     assert len(preserved) == total - 8
     assert [m["tool_call_id"] for m in compacted] == [f"c{i}" for i in range(8)]
+
+
+def test_microcompact_respects_configured_target_ratio(monkeypatch):
+    """A higher target ratio preserves more tool results after an overflow."""
+    provider = MagicMock()
+    provider.generation = SimpleNamespace(max_tokens=0)
+    tools = MagicMock()
+    tools.get_definitions.return_value = []
+
+    total = 18
+    long_content = "x" * 600
+    messages = _microcompact_messages(total=total, tool_name="read_file", content=long_content)
+    spec = make_run_spec(provider,
+        initial_messages=messages,
+        tools=tools,
+        model="test-model",
+        max_iterations=1,
+        max_tool_result_chars=_MAX_TOOL_RESULT_CHARS,
+        max_tokens=0,
+        context_window_tokens=2224,  # input budget 1200, configured target 1104
+        inflight_compaction_target_ratio=0.92,
+    )
+
+    def estimate(_provider, _model, msgs, _tools):
+        return sum(
+            90 if msg.get("content") == long_content
+            else 1 if isinstance(msg.get("content"), str)
+            and "compacted to fit context" in msg.get("content", "")
+            else 0
+            for msg in msgs
+            if msg.get("role") == "tool"
+        ), "test"
+
+    monkeypatch.setattr("nanobot.agent.context_governance.estimate_prompt_tokens_chain", estimate)
+
+    result = ContextGovernor().compact_inflight_overflow(
+        _governance_config(provider, tools, spec),
+        messages,
+        set(),
+    )
+    tool_msgs = [m for m in result if m.get("role") == "tool"]
+    compacted = [m for m in tool_msgs if "compacted to fit context" in str(m.get("content", ""))]
+
+    assert len(compacted) == 6
 
 
 def test_microcompact_compacts_newest_when_it_alone_overflows(monkeypatch):

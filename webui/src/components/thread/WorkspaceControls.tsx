@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState, type ReactNode } from "react";
-import { AlertTriangle, Check, ChevronDown, Folder, Hand } from "lucide-react";
+import { AlertTriangle, Check, ChevronDown, Eye, Folder, Hand, ShieldQuestion, Zap } from "lucide-react";
 import { useTranslation } from "react-i18next";
 
 import { Button } from "@/components/ui/button";
@@ -12,6 +12,7 @@ import {
 import { Input } from "@/components/ui/input";
 import type {
   WorkspaceAccessMode,
+  WorkspaceExecutionPolicy,
   WorkspaceScopePayload,
   WorkspacesPayload,
 } from "@/lib/types";
@@ -21,6 +22,7 @@ import {
   isAbsoluteWorkspacePath,
   projectNameFromPath,
   scopeWithAccessMode,
+  scopeWithExecutionPolicy,
   selectedProjectScope,
   shortWorkspacePath,
 } from "@/lib/workspace";
@@ -298,6 +300,83 @@ export function WorkspaceAccessMenu({
           warning
           onSelect={() => setMode("full")}
         />
+      </DropdownMenuContent>
+    </DropdownMenu>
+  );
+}
+
+export function WorkspaceExecutionPolicyMenu({
+  scope,
+  disabled,
+  isHero,
+  onChange,
+}: {
+  scope: WorkspaceScopePayload;
+  disabled?: boolean;
+  isHero: boolean;
+  onChange?: (scope: WorkspaceScopePayload) => void;
+}) {
+  const { t } = useTranslation();
+  const policy = scope.execution_policy ?? "auto";
+  const definitions: Record<WorkspaceExecutionPolicy, {
+    icon: ReactNode;
+    label: string;
+    warning?: boolean;
+  }> = {
+    read_only: {
+      icon: <Eye className="h-4 w-4" />,
+      label: t("thread.composer.workspace.readOnly"),
+    },
+    ask: {
+      icon: <ShieldQuestion className="h-4 w-4" />,
+      label: t("thread.composer.workspace.ask"),
+    },
+    auto: {
+      icon: <Zap className="h-4 w-4" />,
+      label: t("thread.composer.workspace.auto"),
+      warning: true,
+    },
+  };
+  const selected = definitions[policy];
+  const setPolicy = (value: WorkspaceExecutionPolicy) => {
+    if (value === policy) return;
+    onChange?.(scopeWithExecutionPolicy(scope, value));
+  };
+
+  return (
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild disabled={disabled || !onChange}>
+        <Button
+          type="button"
+          variant="ghost"
+          aria-label={`${t("thread.composer.workspace.executionAria")}: ${selected.label}`}
+          title={selected.label}
+          className={cn(
+            "touch-target min-w-0 max-w-[min(11rem,38vw)] whitespace-nowrap rounded-[10px] border border-transparent font-semibold shadow-none",
+            isHero ? "h-8 px-2.5 text-[12px]" : "h-9 px-3 text-[12.5px]",
+            policy === "auto"
+              ? "text-orange-600 hover:bg-orange-500/8 dark:text-orange-300"
+              : "text-muted-foreground hover:bg-foreground/[0.045] hover:text-foreground",
+          )}
+        >
+          <span className="mr-1.5 grid h-4 w-4 shrink-0 place-items-center" aria-hidden>
+            {selected.icon}
+          </span>
+          <span className="min-w-0 truncate">{selected.label}</span>
+          <ChevronDown className="ml-1.5 h-3 w-3 shrink-0" aria-hidden />
+        </Button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="start" className="w-60">
+        {(["read_only", "ask", "auto"] as WorkspaceExecutionPolicy[]).map((value) => (
+          <AccessMenuItem
+            key={value}
+            icon={definitions[value].icon}
+            label={definitions[value].label}
+            selected={policy === value}
+            warning={definitions[value].warning}
+            onSelect={() => setPolicy(value)}
+          />
+        ))}
       </DropdownMenuContent>
     </DropdownMenu>
   );

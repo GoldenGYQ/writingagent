@@ -33,7 +33,11 @@ from nanobot.channels.websocket.runtime import (
 )
 from nanobot.config.loader import load_config, save_config
 from nanobot.config.schema import Config, ModelPresetConfig
-from nanobot.runtime_context import RUNTIME_CONTEXT_INPUT_META, WEBUI_QUOTE_SOURCE
+from nanobot.runtime_context import (
+    RUNTIME_CONTEXT_INPUT_META,
+    WEBUI_FILE_CITATION_SOURCE,
+    WEBUI_QUOTE_SOURCE,
+)
 from nanobot.session import webui_turns as wth
 from nanobot.session.manager import SessionManager
 from nanobot.webui.gateway_services import GatewayServices, build_gateway_services
@@ -603,6 +607,95 @@ async def test_webui_message_projects_quote_to_trusted_runtime_context(bus: Magi
 
 
 @pytest.mark.asyncio
+async def test_webui_message_projects_file_citation_to_trusted_runtime_context(bus: MagicMock) -> None:
+    channel = _ch(bus)
+    conn = MagicMock()
+    channel._webui_connections.add(conn)
+
+    await channel._dispatch_envelope(
+        conn,
+        "webui-client",
+        {
+            "type": "message",
+            "chat_id": "chat-1",
+            "content": "Use this section",
+            "file_citation": {
+                "path": "README.md",
+                "start_line": 4,
+                "end_line": 6,
+                "quote": "selected source",
+            },
+            "webui": True,
+        },
+    )
+
+    msg = bus.publish_inbound.await_args.args[0]
+    [block] = msg.metadata[RUNTIME_CONTEXT_INPUT_META]
+    assert block.source == WEBUI_FILE_CITATION_SOURCE
+    assert "README.md" in block.content
+    assert "selected source" in block.content
+
+
+@pytest.mark.asyncio
+async def test_interaction_response_resolves_state_and_resumes_agent(
+    bus: MagicMock,
+    tmp_path,
+) -> None:
+    sessions = SessionManager(tmp_path / "sessions")
+    session = sessions.get_or_create("websocket:chat-hitl")
+    session.metadata["working_plan"] = {
+        "id": "plan-1",
+        "version": 2,
+        "kind": "writing",
+        "status": "waiting_for_user",
+        "title": "Review outline",
+        "objective": "Approve before drafting",
+        "steps": [{"id": "outline", "title": "Outline", "status": "in_progress"}],
+    }
+    session.metadata["interaction_request"] = {
+        "id": "interaction-1",
+        "pending": True,
+        "status": "pending",
+        "reason": "outline_approval",
+        "fields": [{
+            "id": "focus",
+            "type": "select",
+            "label": "Focus",
+            "required": True,
+            "options": [{"value": "runtime", "label": "Runtime"}],
+        }],
+        "actions": [{"id": "approve", "label": "Approve", "style": "primary"}],
+    }
+    sessions.save(session)
+    channel = WebSocketChannel(
+        {"enabled": True, "allowFrom": ["*"], "host": "127.0.0.1"},
+        bus,
+        gateway=_basic_handler(bus, session_manager=sessions),
+    )
+    conn = AsyncMock()
+    conn.remote_address = ("127.0.0.1", 50123)
+
+    await channel._dispatch_envelope(
+        conn,
+        "webui-client",
+        {
+            "type": "interaction_response",
+            "chat_id": "chat-hitl",
+            "interaction_id": "interaction-1",
+            "action": "approve",
+            "values": {"focus": "runtime"},
+        },
+    )
+
+    saved = sessions.get_or_create("websocket:chat-hitl")
+    assert saved.metadata["interaction_request"]["status"] == "resolved"
+    assert saved.metadata["working_plan"]["status"] == "active"
+    inbound = bus.publish_inbound.await_args.args[0]
+    assert inbound.metadata["interaction_response"] is True
+    assert '"focus": "runtime"' in inbound.content
+
+
+@pytest.mark.asyncio
 async def test_webui_message_scope_inherits_persisted_session_scope(
     bus: MagicMock,
     tmp_path,
@@ -642,6 +735,7 @@ async def test_webui_message_scope_inherits_persisted_session_scope(
     assert msg.metadata["workspace_scope"] == {
         "project_path": str(project.resolve()),
         "access_mode": "full",
+        "execution_policy": "auto",
     }
 
 
@@ -688,6 +782,7 @@ async def test_webui_scope_expands_home_project_path(
     assert msg.metadata["workspace_scope"] == {
         "project_path": str(project.resolve()),
         "access_mode": "restricted",
+        "execution_policy": "auto",
     }
 
 
@@ -839,6 +934,7 @@ async def test_webui_set_workspace_scope_rejects_running_chat(bus: MagicMock, tm
     assert saved["metadata"]["workspace_scope"] == {
         "project_path": str(project.resolve()),
         "access_mode": "restricted",
+        "execution_policy": "auto",
     }
 
 
@@ -880,6 +976,7 @@ async def test_remote_webui_scope_allows_access_reduction(
     assert saved["metadata"]["workspace_scope"] == {
         "project_path": str(default_workspace.resolve()),
         "access_mode": "restricted",
+        "execution_policy": "auto",
     }
 
 
@@ -1038,6 +1135,7 @@ async def test_native_webui_scope_allows_custom_scope_without_loopback(
     assert saved["metadata"]["workspace_scope"] == {
         "project_path": str(project.resolve()),
         "access_mode": "full",
+        "execution_policy": "auto",
     }
 
 
@@ -4221,6 +4319,50 @@ def test_handle_file_preview_returns_workspace_file(tmp_path) -> None:
     assert body["language"] == "python"
     assert body["content"].splitlines() == ["print('hello')"]
     assert body["truncated"] is False
+
+
+def test_handle_writing_runtime_returns_current_asset_snapshot(tmp_path) -> None:
+    from urllib.parse import quote
+
+    from websockets.datastructures import Headers
+    from websockets.http11 import Request
+
+    from nanobot.writing.document import DocumentService
+
+    workspace = tmp_path / "workspace"
+    service = DocumentService(workspace)
+    project = service.create_project("Writing task")
+    document = service.create_document(project.id, "Paper")
+    chapter = service.create_chapter(document, "Introduction", content="Hello\n")
+    sessions = SessionManager(tmp_path / "sessions")
+    session = sessions.get_or_create("websocket:writing-runtime")
+    session.metadata["writing_context"] = {
+        "project_id": project.id,
+        "document_id": document.id,
+        "chapter_id": chapter.id,
+    }
+    sessions.save(session)
+
+    gateway = _basic_handler(
+        MagicMock(),
+        workspace_path=workspace,
+        session_manager=sessions,
+    )
+    gateway.tokens.api_tokens["tok"] = time.monotonic() + 300.0
+    key = quote("websocket:writing-runtime", safe="")
+    req = Request(
+        f"/api/sessions/{key}/writing-runtime",
+        Headers([("Authorization", "Bearer tok")]),
+    )
+
+    resp = gateway.http._handle_writing_runtime(req, key)
+
+    assert resp.status_code == 200
+    body = json.loads(resp.body.decode())
+    assert body["active"] is True
+    assert body["project"]["id"] == project.id
+    assert body["document"]["id"] == document.id
+    assert body["chapter"]["id"] == chapter.id
 
 
 def test_handle_file_preview_probe_checks_availability_without_content(tmp_path) -> None:

@@ -76,6 +76,35 @@ class GoalStateChanged:
 
 
 @dataclass(frozen=True)
+class WorkingPlanChanged:
+    """A session's durable working plan changed."""
+
+    context: RuntimeEventContext
+    session_metadata: dict[str, Any] = field(default_factory=dict)
+
+
+@dataclass(frozen=True)
+class InteractionStateChanged:
+    """A session entered or left a human-input wait state."""
+
+    context: RuntimeEventContext
+    session_metadata: dict[str, Any] = field(default_factory=dict)
+
+
+@dataclass(frozen=True)
+class WritingArtifactChanged:
+    """A managed writing Artifact, ChangeSet or Revision changed."""
+
+    context: RuntimeEventContext
+    project_id: str
+    document_id: str | None = None
+    chapter_id: str | None = None
+    artifact: dict[str, Any] = field(default_factory=dict)
+    changeset: dict[str, Any] | None = None
+    revision: dict[str, Any] | None = None
+
+
+@dataclass(frozen=True)
 class RuntimeModelChanged:
     """The active runtime model/preset changed."""
 
@@ -89,6 +118,9 @@ RuntimeEvent = (
     | TurnRunStatusChanged
     | TurnCompleted
     | GoalStateChanged
+    | WorkingPlanChanged
+    | InteractionStateChanged
+    | WritingArtifactChanged
     | RuntimeModelChanged
 )
 RuntimeEventType = (
@@ -97,6 +129,9 @@ RuntimeEventType = (
     | type[TurnRunStatusChanged]
     | type[TurnCompleted]
     | type[GoalStateChanged]
+    | type[WorkingPlanChanged]
+    | type[InteractionStateChanged]
+    | type[WritingArtifactChanged]
     | type[RuntimeModelChanged]
 )
 RuntimeEventHandler = Callable[[Any], Awaitable[None] | None]

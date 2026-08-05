@@ -29,6 +29,8 @@ if TYPE_CHECKING:
 SNIP_SAFETY_BUFFER = 1024
 MICROCOMPACT_MIN_CHARS = 500
 INFLIGHT_COMPACT_TARGET_RATIO = 0.85
+INFLIGHT_COMPACT_MIN_TARGET_RATIO = 0.80
+INFLIGHT_COMPACT_MAX_TARGET_RATIO = 0.98
 COMPACTABLE_TOOLS = frozenset({
     "read_file", "exec", "grep", "find_files",
     "web_search", "web_fetch", "list_dir", "list_exec_sessions",
@@ -67,6 +69,7 @@ class ContextGovernanceConfig:
     context_window_tokens: int | None = None
     context_block_limit: int | None = None
     max_tokens: int | None = None
+    inflight_compaction_target_ratio: float | None = None
     inflight_start_index: int = 0
 
 
@@ -348,7 +351,17 @@ class ContextGovernor:
         if estimate <= budget:
             return updated
 
-        target = int(budget * INFLIGHT_COMPACT_TARGET_RATIO)
+        target_ratio = config.inflight_compaction_target_ratio
+        if target_ratio is None:
+            target_ratio = INFLIGHT_COMPACT_TARGET_RATIO
+        # ContextGovernanceConfig is also used directly by integrations and
+        # tests, so keep a defensive bound even though AgentDefaults validates
+        # the user-facing configuration.
+        target_ratio = min(
+            max(float(target_ratio), INFLIGHT_COMPACT_MIN_TARGET_RATIO),
+            INFLIGHT_COMPACT_MAX_TARGET_RATIO,
+        )
+        target = int(budget * target_ratio)
         candidates = self._inflight_compaction_candidates(
             config,
             updated,

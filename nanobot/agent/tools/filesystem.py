@@ -1,16 +1,21 @@
 """File system tools: read, write, edit, list."""
 
-# pyright: reportPrivateUsage=false, reportUnusedFunction=false
+from __future__ import annotations
 
+# pyright: reportPrivateUsage=false, reportUnusedFunction=false
 import difflib
 import mimetypes
 import os
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from nanobot.agent.tools.base import Tool, ToolResult, tool_parameters
 from nanobot.agent.tools.context import ToolContext
+from nanobot.agent.tools.file_mutation_policy import (
+    FileMutationPolicyGate,
+    PlannedFileWrite,
+)
 from nanobot.agent.tools.file_state import FileStates, _hash_file, current_file_states
 from nanobot.agent.tools.path_utils import resolve_workspace_path
 from nanobot.agent.tools.schema import (
@@ -22,6 +27,10 @@ from nanobot.agent.tools.schema import (
 from nanobot.config_base import Base
 from nanobot.security.workspace_access import current_tool_workspace
 from nanobot.utils.helpers import build_image_content_blocks, detect_image_mime
+
+if TYPE_CHECKING:
+    from nanobot.bus.runtime_events import RuntimeEventBus
+    from nanobot.session.manager import SessionManager
 
 
 class FileToolsConfig(Base):
@@ -55,6 +64,8 @@ class _FsTool(Tool):
         restrict_to_workspace: bool | None = None,
         sandbox_restricts_workspace: bool = False,
         extra_read_allowed_files: list[Path] | None = None,
+        sessions: SessionManager | None = None,
+        runtime_events: RuntimeEventBus | None = None,
     ):
         self._workspace = workspace
         self._allowed_dir = allowed_dir
@@ -78,6 +89,7 @@ class _FsTool(Tool):
         # current async task, which keeps shared tool instances session-safe.
         self._explicit_file_states = file_states
         self._fallback_file_states = FileStates()
+        self._mutation_policy = FileMutationPolicyGate(sessions, runtime_events)
 
     @classmethod
     def create(cls, ctx: ToolContext) -> Tool:
@@ -101,6 +113,21 @@ class _FsTool(Tool):
             file_states=ctx.file_state_store,
             restrict_to_workspace=ctx.config.restrict_to_workspace,
             sandbox_restricts_workspace=sandbox_restricts,
+            sessions=ctx.sessions,
+            runtime_events=ctx.runtime_events,
+        )
+
+    async def _authorize_file_mutation(
+        self,
+        *,
+        tool_name: str,
+        arguments: dict[str, Any],
+        writes: list[PlannedFileWrite],
+    ) -> ToolResult | None:
+        return await self._mutation_policy.authorize(
+            tool_name=tool_name,
+            arguments=arguments,
+            writes=writes,
         )
 
     @property
@@ -518,6 +545,14 @@ class WriteFileTool(_FsTool):
             if content is None:
                 raise ValueError("Unknown content")
             fp = self._resolve_write(path)
+            before = fp.read_bytes() if fp.exists() else None
+            approval = await self._authorize_file_mutation(
+                tool_name=self.name,
+                arguments={"path": path, "content": content},
+                writes=[PlannedFileWrite(fp, before, content.encode("utf-8"))],
+            )
+            if approval is not None:
+                return approval
             fp.parent.mkdir(parents=True, exist_ok=True)
             fp.write_text(content, encoding="utf-8")
             self._file_states.record_write(fp)
@@ -877,11 +912,28 @@ class EditFileTool(_FsTool):
             if expected_replacements is not None and expected_replacements < 1:
                 return ToolResult.error("Error: expected_replacements must be >= 1.")
 
+            mutation_arguments = {
+                "path": path,
+                "old_text": old_text,
+                "new_text": new_text,
+                "replace_all": replace_all,
+                "occurrence": occurrence,
+                "line_hint": line_hint,
+                "expected_replacements": expected_replacements,
+            }
+
             fp = self._resolve_write(path)
 
             # Create-file semantics: old_text='' + file doesn't exist → create
             if not fp.exists():
                 if old_text == "":
+                    approval = await self._authorize_file_mutation(
+                        tool_name=self.name,
+                        arguments=mutation_arguments,
+                        writes=[PlannedFileWrite(fp, None, new_text.encode("utf-8"))],
+                    )
+                    if approval is not None:
+                        return approval
                     fp.parent.mkdir(parents=True, exist_ok=True)
                     fp.write_text(new_text, encoding="utf-8")
                     self._file_states.record_write(fp)
@@ -902,6 +954,13 @@ class EditFileTool(_FsTool):
                 content = raw.decode("utf-8")
                 if content.strip():
                     return ToolResult.error(f"Error: Cannot create file — {path} already exists and is not empty.")
+                approval = await self._authorize_file_mutation(
+                    tool_name=self.name,
+                    arguments=mutation_arguments,
+                    writes=[PlannedFileWrite(fp, raw, new_text.encode("utf-8"))],
+                )
+                if approval is not None:
+                    return approval
                 fp.write_text(new_text, encoding="utf-8")
                 self._file_states.record_write(fp)
                 return f"Successfully edited {fp}"
@@ -990,7 +1049,15 @@ class EditFileTool(_FsTool):
             if uses_crlf:
                 new_content = new_content.replace("\n", "\r\n")
 
-            fp.write_bytes(new_content.encode("utf-8"))
+            new_bytes = new_content.encode("utf-8")
+            approval = await self._authorize_file_mutation(
+                tool_name=self.name,
+                arguments=mutation_arguments,
+                writes=[PlannedFileWrite(fp, raw, new_bytes)],
+            )
+            if approval is not None:
+                return approval
+            fp.write_bytes(new_bytes)
             self._file_states.record_write(fp)
             msg = f"Successfully edited {fp}"
             if warning:
