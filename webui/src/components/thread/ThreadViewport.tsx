@@ -620,7 +620,7 @@ export const ThreadViewport = forwardRef<ThreadViewportHandle, ThreadViewportPro
   }, [hasMessages, maybeLoadEarlierFromScroll, yieldCameraToUser]);
 
   return (
-    <div className="thread-viewport relative flex min-h-0 flex-1 overflow-hidden">
+    <div className="thread-canvas-surface thread-viewport relative flex min-h-0 flex-1 overflow-hidden">
       <div
         ref={viewportFrameRef}
         className={cn(
@@ -643,8 +643,8 @@ export const ThreadViewport = forwardRef<ThreadViewportHandle, ThreadViewportPro
           className={cn(
             "thread-layout mx-auto grid min-h-full w-full",
             hasMessages
-              ? "h-full max-w-[64rem]"
-              : "max-w-[72rem] px-3 pb-[calc(0.75rem+env(safe-area-inset-bottom))] pt-6 sm:px-4 sm:py-12",
+               ? "h-full max-w-[70rem]"
+               : "max-w-[78rem] px-3 pb-[calc(0.75rem+env(safe-area-inset-bottom))] pt-6 sm:px-4 sm:py-12",
           )}
         >
           {hasMessages ? (
@@ -659,7 +659,7 @@ export const ThreadViewport = forwardRef<ThreadViewportHandle, ThreadViewportPro
                 hasVerticalOverflow ? "overflow-y-auto" : "overflow-hidden",
               )}
             >
-              <div ref={messageContentRef} className="mx-auto w-full max-w-[49.5rem]">
+              <div ref={messageContentRef} className="mx-auto w-full max-w-[58rem]">
                 <ThreadMessages
                   messages={visibleMessages}
                   isStreaming={isStreaming}
@@ -689,9 +689,9 @@ export const ThreadViewport = forwardRef<ThreadViewportHandle, ThreadViewportPro
                 threadMotionRef.current?.handleComposerInput();
               }
             }}
-            className={cn(
-              "row-start-2 z-10 w-full",
-              hasMessages ? "relative bg-background" : "relative self-center",
+              className={cn(
+                "thread-composer-dock row-start-2 z-10 w-full",
+                hasMessages ? "relative" : "relative self-center",
             )}
           >
             <div
@@ -703,7 +703,7 @@ export const ThreadViewport = forwardRef<ThreadViewportHandle, ThreadViewportPro
             >
               <div
                 data-testid="thread-composer-motion"
-                className="mx-auto w-full max-w-[58rem]"
+                className="mx-auto w-full max-w-[66rem]"
               >
                 {composer}
               </div>
