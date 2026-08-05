@@ -13,73 +13,65 @@
 @layer base {
   :root {
     color-scheme: light;
-    --background: 214 42% 97%;
-    --foreground: 222 47% 13%;
+    --background: 0 0% 100%;
+    --foreground: 240 3% 12%;
     --card: 0 0% 100%;
-    --card-foreground: 222 47% 13%;
+    --card-foreground: 240 3% 12%;
     --popover: 0 0% 100%;
-    --popover-foreground: 222 47% 13%;
-    --primary: 221 76% 36%;
-    --primary-foreground: 0 0% 100%;
-    --secondary: 213 42% 93%;
-    --secondary-foreground: 222 47% 16%;
-    --muted: 214 34% 94%;
-    --muted-foreground: 215 22% 40%;
-    --accent: 211 68% 91%;
-    --accent-foreground: 221 76% 27%;
+    --popover-foreground: 240 3% 12%;
+    --primary: 240 4% 16%;
+    --primary-foreground: 0 0% 98%;
+    --secondary: 0 0% 96.1%;
+    --secondary-foreground: 0 0% 9%;
+    --muted: 0 0% 96.1%;
+    --muted-foreground: 0 0% 45.1%;
+    --accent: 0 0% 96.1%;
+    --accent-foreground: 0 0% 9%;
     --destructive: 0 84.2% 60.2%;
-    --destructive-foreground: 0 0% 100%;
-    --border: 214 30% 86%;
-    --input: 214 30% 82%;
-    --ring: 217 84% 52%;
+    --destructive-foreground: 0 0% 98%;
+    --border: 40 8% 90.5%;
+    --input: 40 8% 90.5%;
+    --ring: 0 0% 3.9%;
     --inline-token-highlight: 221 70% 50%;
-    --radius: 0.875rem;
-    --sidebar: 222 54% 17%;
-    --sidebar-foreground: 214 40% 97%;
-    --sidebar-accent: 220 45% 25%;
-    --sidebar-accent-foreground: 0 0% 100%;
-    --sidebar-border: 220 34% 29%;
-    --jlu-blue: 221 76% 36%;
-    --jlu-deep: 222 54% 17%;
-    --jlu-sky: 201 92% 58%;
-    --jlu-gold: 43 88% 54%;
+    --radius: 0.4375rem;
+    --sidebar: 40 8% 96.8%;
+    --sidebar-foreground: 0 0% 3.9%;
+    --sidebar-accent: 0 0% 95.8%;
+    --sidebar-accent-foreground: 0 0% 9%;
+    --sidebar-border: 40 8% 90.5%;
     --settings-canvas: var(--background);
-    --settings-surface: 214 33% 94%;
+    --settings-surface: 60 6% 96.7%;
     --scrollbar-thumb: hsl(var(--muted-foreground) / 0.26);
     --scrollbar-thumb-hover: hsl(var(--muted-foreground) / 0.42);
   }
 
   .dark {
     color-scheme: dark;
-    --background: 224 42% 8%;
-    --foreground: 211 38% 96%;
-    --card: 222 38% 12%;
-    --card-foreground: 211 38% 96%;
-    --popover: 222 40% 14%;
-    --popover-foreground: 211 38% 96%;
-    --primary: 214 100% 70%;
-    --primary-foreground: 224 48% 10%;
-    --secondary: 222 34% 17%;
-    --secondary-foreground: 211 38% 96%;
-    --muted: 222 34% 16%;
-    --muted-foreground: 215 20% 68%;
-    --accent: 220 38% 22%;
-    --accent-foreground: 214 100% 84%;
-    --destructive: 0 63% 42%;
-    --destructive-foreground: 0 0% 100%;
-    --border: 220 29% 24%;
+    --background: 0 0% 19%;
+    --foreground: 240 4% 96%;
+    --card: 0 0% 22%;
+    --card-foreground: 240 4% 96%;
+    --popover: var(--card);
+    --popover-foreground: 240 4% 96%;
+    --primary: 240 5% 98%;
+    --primary-foreground: 0 0% 9%;
+    --secondary: var(--card);
+    --secondary-foreground: 0 0% 98%;
+    --muted: var(--card);
+    --muted-foreground: 0 0% 65%;
+    --accent: 0 0% 25%;
+    --accent-foreground: 0 0% 98%;
+    --destructive: 0 62.8% 30.6%;
+    --destructive-foreground: 0 0% 98%;
+    --border: 0 0% 28%;
     --input: var(--border);
-    --ring: 213 100% 75%;
+    --ring: 0 0% 83.1%;
     --inline-token-highlight: 217 92% 72%;
-    --sidebar: 225 54% 10%;
-    --sidebar-foreground: 213 42% 96%;
-    --sidebar-accent: 222 45% 18%;
-    --sidebar-accent-foreground: 0 0% 100%;
+    --sidebar: var(--card);
+    --sidebar-foreground: 0 0% 98%;
+    --sidebar-accent: var(--background);
+    --sidebar-accent-foreground: 0 0% 98%;
     --sidebar-border: var(--border);
-    --jlu-blue: 214 100% 70%;
-    --jlu-deep: 225 54% 10%;
-    --jlu-sky: 197 100% 69%;
-    --jlu-gold: 43 94% 63%;
     --settings-canvas: var(--background);
     --settings-surface: var(--card);
     --scrollbar-thumb: hsl(var(--muted-foreground) / 0.28);
@@ -100,17 +92,7 @@
 
   body {
     @apply bg-background text-foreground font-sans antialiased;
-    background-color: hsl(var(--background));
-    background-image:
-      radial-gradient(circle at 12% -18%, hsl(var(--jlu-sky) / 0.14), transparent 30rem),
-      radial-gradient(circle at 92% 112%, hsl(var(--jlu-blue) / 0.10), transparent 34rem);
     overflow: hidden;
-  }
-
-  .dark body {
-    background-image:
-      radial-gradient(circle at 12% -18%, hsl(var(--jlu-blue) / 0.16), transparent 34rem),
-      radial-gradient(circle at 92% 112%, hsl(var(--jlu-sky) / 0.08), transparent 38rem);
   }
 
   * {
@@ -883,158 +865,5 @@
     min-width: 2rem;
     height: 2rem;
     min-height: 2rem;
-  }
-}
-
-/* JLU visual language: deep blue ink, paper-white surfaces and a restrained
-   gold accent. These classes form the shell treatment so feature components
-   can keep their existing behavior while sharing one visual identity. */
-@keyframes jlu-ambient-drift {
-  0%,
-  100% {
-    transform: translate3d(-1%, -1%, 0) scale(1);
-    opacity: 0.72;
-  }
-  50% {
-    transform: translate3d(1%, 1%, 0) scale(1.04);
-    opacity: 0.98;
-  }
-}
-
-@keyframes jlu-message-arrive {
-  from {
-    opacity: 0;
-    transform: translateY(8px);
-  }
-  to {
-    opacity: 1;
-    transform: translateY(0);
-  }
-}
-
-.app-shell-frame {
-  isolation: isolate;
-  background:
-    linear-gradient(135deg, hsl(var(--jlu-blue) / 0.06), transparent 42%),
-    hsl(var(--background));
-}
-
-.app-shell-frame::before {
-  content: "";
-  position: absolute;
-  z-index: -1;
-  inset: -12rem -8rem;
-  pointer-events: none;
-  background:
-    radial-gradient(circle at 18% 28%, hsl(var(--jlu-sky) / 0.10), transparent 22rem),
-    radial-gradient(circle at 82% 76%, hsl(var(--jlu-gold) / 0.055), transparent 18rem);
-  filter: blur(8px);
-  animation: jlu-ambient-drift 18s ease-in-out infinite;
-}
-
-.app-main-surface {
-  background:
-    linear-gradient(180deg, hsl(var(--background) / 0.78), hsl(var(--background) / 0.96)),
-    radial-gradient(circle at 65% 2%, hsl(var(--jlu-sky) / 0.09), transparent 28rem);
-}
-
-.dark .app-main-surface {
-  background:
-    linear-gradient(180deg, hsl(var(--background) / 0.72), hsl(var(--background) / 0.97)),
-    radial-gradient(circle at 65% 2%, hsl(var(--jlu-blue) / 0.14), transparent 30rem);
-}
-
-.app-sidebar-surface {
-  position: relative;
-  border-right: 1px solid hsl(var(--sidebar-border) / 0.9);
-  background:
-    linear-gradient(180deg, hsl(var(--sidebar) / 0.99), hsl(var(--jlu-deep) / 0.96)),
-    hsl(var(--sidebar));
-  box-shadow: 16px 0 38px -34px hsl(var(--jlu-deep) / 0.65);
-}
-
-.app-sidebar-surface.bg-transparent {
-  background: transparent;
-  box-shadow: none;
-}
-
-.app-sidebar-surface::after {
-  content: "";
-  position: absolute;
-  inset: 0 0 auto;
-  height: 2px;
-  pointer-events: none;
-  background: linear-gradient(90deg, transparent, hsl(var(--jlu-gold) / 0.9), transparent);
-  opacity: 0.9;
-}
-
-.sidebar-brand-button {
-  box-shadow: 0 0 0 1px hsl(var(--jlu-sky) / 0.22), 0 8px 24px -14px hsl(var(--jlu-sky) / 0.8);
-}
-
-.thread-header-surface {
-  border-bottom: 1px solid hsl(var(--border) / 0.7);
-  background: hsl(var(--background) / 0.72);
-  -webkit-backdrop-filter: blur(18px) saturate(135%);
-  backdrop-filter: blur(18px) saturate(135%);
-}
-
-.thread-canvas-surface {
-  background:
-    radial-gradient(circle at 50% 0%, hsl(var(--jlu-sky) / 0.055), transparent 24rem),
-    transparent;
-}
-
-.thread-composer-dock {
-  background: linear-gradient(180deg, transparent, hsl(var(--background) / 0.9) 18%, hsl(var(--background) / 0.98));
-}
-
-.assistant-message-card {
-  position: relative;
-  padding: 0.9rem 1.1rem 0.8rem;
-  border: 1px solid hsl(var(--border) / 0.68);
-  border-radius: 1.2rem;
-  background: hsl(var(--card) / 0.56);
-  box-shadow: 0 14px 34px -30px hsl(var(--jlu-deep) / 0.64);
-  animation: jlu-message-arrive 420ms cubic-bezier(0.16, 1, 0.3, 1) both;
-}
-
-.assistant-message-card::before {
-  content: "";
-  position: absolute;
-  inset: 0 auto 0 -1px;
-  width: 3px;
-  border-radius: 999px;
-  background: linear-gradient(180deg, hsl(var(--jlu-blue)), hsl(var(--jlu-gold)));
-  opacity: 0.82;
-}
-
-.user-message-bubble {
-  border: 1px solid hsl(var(--jlu-sky) / 0.22);
-  background: linear-gradient(135deg, hsl(var(--jlu-blue)), hsl(224 71% 29%));
-  color: hsl(var(--primary-foreground));
-  box-shadow: 0 12px 26px -20px hsl(var(--jlu-blue) / 0.9);
-}
-
-.thread-composer-surface {
-  border: 1px solid hsl(var(--border) / 0.9);
-  background: hsl(var(--card) / 0.78);
-  box-shadow: 0 18px 44px -34px hsl(var(--jlu-deep) / 0.82), 0 0 0 1px hsl(var(--jlu-sky) / 0.05);
-  -webkit-backdrop-filter: blur(20px) saturate(135%);
-  backdrop-filter: blur(20px) saturate(135%);
-}
-
-.document-workspace-surface {
-  border-left: 1px solid hsl(var(--border) / 0.9);
-  background:
-    linear-gradient(180deg, hsl(var(--card) / 0.84), hsl(var(--background) / 0.96)),
-    hsl(var(--background));
-  box-shadow: -22px 0 48px -44px hsl(var(--jlu-deep) / 0.9);
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .app-shell-frame::before,
-  .assistant-message-card {
-    animation: none;
   }
 }

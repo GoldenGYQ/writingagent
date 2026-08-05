@@ -1954,8 +1954,8 @@ export function ThreadComposer({
         className={cn(
           "thread-composer-surface group/composer relative mx-auto flex w-full flex-col overflow-visible transition-all duration-200",
           isHero
-            ? "max-w-[66rem] rounded-[24px] bg-muted/25 focus-within:bg-card/90 dark:bg-card/90 dark:focus-within:bg-card"
-            : "max-w-[58rem] rounded-[22px] bg-muted/25 focus-within:bg-card/90 dark:bg-card/90 dark:focus-within:bg-card",
+            ? "max-w-[58rem] rounded-[28px] bg-muted/30 focus-within:bg-muted/50 dark:bg-card dark:focus-within:bg-white/[0.06]"
+            : "max-w-[49.5rem] rounded-[22px] bg-muted/30 focus-within:bg-muted/50 dark:bg-card dark:focus-within:bg-white/[0.06]",
           disabled && "opacity-60",
           isDragging && "ring-2 ring-primary/40 motion-reduce:ring-0 motion-reduce:border-primary",
           goalState?.active &&

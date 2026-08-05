@@ -152,7 +152,7 @@ export function DocumentWorkspacePanel({
   return (
     <aside
       className={cn(
-        "document-workspace-surface relative flex min-h-0 w-[min(100vw,var(--file-preview-width))] shrink-0 flex-col overflow-hidden transition-[width,transform,opacity] duration-300 ease-out md:w-[var(--file-preview-width)] motion-reduce:transition-none",
+        "relative flex min-h-0 w-[min(100vw,var(--file-preview-width))] shrink-0 flex-col overflow-hidden border-l bg-background/95 shadow-[-10px_0_30px_-24px_rgba(0,0,0,0.55)] transition-[width,transform,opacity] duration-300 ease-out md:w-[var(--file-preview-width)] motion-reduce:transition-none",
         isClosing && "translate-x-3 opacity-0",
       )}
       style={{

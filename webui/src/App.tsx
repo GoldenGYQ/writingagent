@@ -1974,7 +1974,7 @@ function Shell({
     <ThemeProvider theme={theme}>
       <div
         className={cn(
-          "app-shell-frame relative h-full w-full overflow-hidden",
+          "relative h-full w-full overflow-hidden",
           showHostChrome && "host-window-shell",
         )}
       >
@@ -2098,7 +2098,7 @@ function Shell({
           ) : null}
         <main
           className={cn(
-            "app-main-surface relative flex h-full min-w-0 flex-1 flex-col overflow-hidden bg-background",
+            "relative flex h-full min-w-0 flex-1 flex-col overflow-hidden bg-background",
           )}
         >
             <div

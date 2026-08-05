@@ -291,7 +291,7 @@ export function MessageBubble({
         {hasText ? (
           <p
             className={cn(
-              "user-message-bubble ml-auto w-fit max-w-full min-w-0 rounded-[18px] bg-secondary/70 px-4 py-2",
+              "ml-auto w-fit max-w-full min-w-0 rounded-[18px] bg-secondary/70 px-4 py-2",
               "text-left text-[16px]/[1.75] whitespace-pre-wrap [overflow-wrap:anywhere]",
             )}
           >
@@ -365,10 +365,7 @@ export function MessageBubble({
               triggerLabel={automationTriggeredLabel}
             />
           ) : null}
-          <div
-            className="assistant-message-card"
-            data-assistant-selectable={message.isStreaming ? undefined : "true"}
-          >
+          <div data-assistant-selectable={message.isStreaming ? undefined : "true"}>
             {/* A mode switch rebuilds Streamdown's subtree and moves the scroll anchor. */}
             <MarkdownText
               streaming={!!message.isStreaming}

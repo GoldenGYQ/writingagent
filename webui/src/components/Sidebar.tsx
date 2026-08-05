@@ -90,8 +90,8 @@ export function Sidebar(props: SidebarProps) {
       ref={props.containActionMenus ? setMenuPortalContainer : undefined}
       aria-label={t("sidebar.navigation")}
       className={cn(
-        "app-sidebar-surface flex h-full w-full min-w-0 flex-col text-sidebar-foreground",
-        props.hostChromeInset && "bg-transparent",
+        "flex h-full w-full min-w-0 flex-col text-sidebar-foreground",
+        props.hostChromeInset ? "bg-transparent" : "bg-sidebar",
       )}
     >
       <div
@@ -109,10 +109,10 @@ export function Sidebar(props: SidebarProps) {
           onClick={collapsed ? props.onExpand : undefined}
           tabIndex={collapsed ? 0 : -1}
           className={cn(
-            "sidebar-brand-button flex h-9 w-9 shrink-0 items-center justify-center overflow-hidden rounded-xl transition-colors",
+            "flex h-9 w-9 shrink-0 items-center justify-center overflow-hidden rounded-xl transition-colors",
             collapsed
               ? "-ml-0.5 hover:bg-sidebar-accent/75"
-              : "pointer-events-none -ml-0.5 bg-sidebar-accent/55",
+              : "pointer-events-none -ml-0.5",
           )}
         >
           <img
@@ -294,7 +294,7 @@ function SidebarActionButton({
         collapsed
           ? "w-9 justify-center gap-0 rounded-xl px-0"
           : "w-full justify-start gap-2 px-3 text-[12.5px]",
-        active && "bg-sidebar-accent text-sidebar-accent-foreground shadow-[inset_0_0_0_1px_hsl(var(--jlu-gold)/0.48),0_8px_20px_-16px_hsl(var(--jlu-sky)/0.7)]",
+        active && "bg-sidebar-accent text-sidebar-foreground shadow-[inset_0_0_0_1px_hsl(var(--sidebar-border)/0.55)]",
         className,
       )}
     >
