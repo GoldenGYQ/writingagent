@@ -27,6 +27,7 @@ from nanobot.command.builtin import builtin_command_palette
 from nanobot.cron.session_turns import is_bound_cron_job
 from nanobot.cron.types import CronJob, CronSchedule
 from nanobot.knowledge.compiler import parse_frontmatter
+from nanobot.knowledge.retriever import KnowledgeRetriever
 from nanobot.knowledge.store import KnowledgeNotFoundError, KnowledgeStore
 from nanobot.runtime_context import public_history_messages
 from nanobot.triggers.local_types import LocalTrigger
@@ -427,6 +428,10 @@ class GatewayHTTPHandler:
         if m:
             return self._handle_knowledge_project(request, m.group(1), m.group(2))
 
+        m = re.match(r"^/api/sessions/([^/]+)/knowledge-projects/([^/]+)/search$", got)
+        if m:
+            return self._handle_knowledge_search(request, m.group(1), m.group(2))
+
         m = re.match(r"^/api/sessions/([^/]+)/automations$", got)
         if m:
             return self._handle_session_automations(request, m.group(1))
@@ -647,6 +652,9 @@ class GatewayHTTPHandler:
                     "page_count": project.page_count,
                     "source_count": len(project.sources),
                     "updated_at": project.updated_at,
+                    "review_status": project.review_status,
+                    "current_revision_id": project.current_revision_id,
+                    "published_revision_id": project.published_revision_id,
                 }
                 for project in projects[:100]
             ],
@@ -668,7 +676,7 @@ class GatewayHTTPHandler:
             return _http_error(404, "knowledge project not found")
         project_root = store.project_path(project.id)
         wiki_root = store.wiki_root(project.id)
-        pages = []
+        pages: list[dict[str, Any]] = []
         if wiki_root.exists():
             for path in sorted(wiki_root.rglob("*.md")):
                 if path.name == "log.md":
@@ -684,14 +692,31 @@ class GatewayHTTPHandler:
                         "path": path.relative_to(scope.project_path).as_posix(),
                         "type": str(metadata.get("type") or (path.parent.name if path.parent != wiki_root else "overview")),
                         "title": str(metadata.get("title") or path.stem),
-                        "tags": [str(value) for value in metadata.get("tags", []) if value],
-                        "related": [str(value) for value in metadata.get("related", []) if value],
-                        "sources": [str(value) for value in metadata.get("sources", []) if value],
+                        "tags": [
+                            str(value)
+                            for value in cast(list[Any], metadata.get("tags"))
+                            if value
+                        ] if isinstance(metadata.get("tags"), list) else [],
+                        "related": [
+                            str(value)
+                            for value in cast(list[Any], metadata.get("related"))
+                            if value
+                        ] if isinstance(metadata.get("related"), list) else [],
+                        "sources": [
+                            str(value)
+                            for value in cast(list[Any], metadata.get("sources"))
+                            if value
+                        ] if isinstance(metadata.get("sources"), list) else [],
                     }
                 )
         ir_values = store.list_ir(project.id)
         entity_count = sum(len(ir.entities) for ir in ir_values)
         relation_count = sum(len(ir.relations) for ir in ir_values)
+        claim_count = sum(len(ir.claims) for ir in ir_values)
+        evidence_count = sum(
+            len(ir.evidence) + sum(len(claim.evidence) for claim in ir.claims)
+            for ir in ir_values
+        )
         task = None
         try:
             task_value = store.get_task(project.id)
@@ -711,9 +736,28 @@ class GatewayHTTPHandler:
             try:
                 graph_value = json.loads(graph_path.read_text(encoding="utf-8"))
                 if isinstance(graph_value, dict):
+                    graph_object = cast(dict[str, Any], graph_value)
+                    raw_nodes = graph_object.get("nodes")
+                    raw_edges = graph_object.get("edges")
+                    raw_communities = graph_object.get("communities")
                     graph = {
-                        "nodes": [node for node in graph_value.get("nodes", []) if isinstance(node, dict)][:200],
-                        "edges": [edge for edge in graph_value.get("edges", []) if isinstance(edge, dict)][:400],
+                        "version": graph_object.get("version", 1),
+                        "directed": bool(graph_object.get("directed", False)),
+                        "nodes": [
+                            cast(dict[str, Any], node)
+                            for node in cast(list[Any], raw_nodes)
+                            if isinstance(node, dict)
+                        ][:200] if isinstance(raw_nodes, list) else [],
+                        "edges": [
+                            cast(dict[str, Any], edge)
+                            for edge in cast(list[Any], raw_edges)
+                            if isinstance(edge, dict)
+                        ][:400] if isinstance(raw_edges, list) else [],
+                        "communities": [
+                            cast(dict[str, Any], community)
+                            for community in cast(list[Any], raw_communities)
+                            if isinstance(community, dict)
+                        ][:100] if isinstance(raw_communities, list) else [],
                     }
             except (OSError, json.JSONDecodeError):
                 graph = {"nodes": [], "edges": []}
@@ -726,6 +770,8 @@ class GatewayHTTPHandler:
             project_root.joinpath(path).relative_to(scope.project_path).as_posix()
             for path in project.ir_files
         ]
+        reviews = [review.to_dict() for review in store.list_reviews(project.id)[:20]]
+        changesets = [changeset.to_dict() for changeset in store.list_changesets(project.id)[:20]]
         return _http_json_response({
             "project": {
                 "id": project.id,
@@ -735,6 +781,9 @@ class GatewayHTTPHandler:
                 "page_count": project.page_count,
                 "source_count": len(project.sources),
                 "updated_at": project.updated_at,
+                "review_status": project.review_status,
+                "current_revision_id": project.current_revision_id,
+                "published_revision_id": project.published_revision_id,
                 "task": task,
             },
             "counts": {
@@ -742,8 +791,11 @@ class GatewayHTTPHandler:
                 "ir_files": len(ir_values),
                 "entities": entity_count,
                 "relations": relation_count,
+                "claims": claim_count,
+                "evidence": evidence_count,
                 "pages": len(pages),
-                "reviews": len(store.list_reviews(project.id)),
+                "reviews": len(reviews),
+                "changesets": len(changesets),
             },
             "paths": {
                 "raw": project_root.joinpath("raw").relative_to(scope.project_path).as_posix(),
@@ -755,8 +807,54 @@ class GatewayHTTPHandler:
             "ir_files": ir_files[:100],
             "pages": pages[:300],
             "pages_truncated": len(pages) > 300,
+            "reviews": reviews,
+            "changesets": changesets,
             "graph": graph,
         })
+
+    def _handle_knowledge_search(self, request: WsRequest, key: str, project_id: str) -> Response:
+        """Expose bounded Knowledge RAG results for the Wiki workbench.
+
+        This is deliberately a read-only projection.  It uses the same
+        ``KnowledgeRetriever`` as the Agent tool and never returns page bodies.
+        """
+        if not self.check_api_token(request):
+            return _http_error(401, "Unauthorized")
+        decoded_key = _decode_api_key(key)
+        if decoded_key is None:
+            return _http_error(400, "invalid session key")
+        if not _is_websocket_channel_session_key(decoded_key):
+            return _http_error(404, "session not found")
+        query = _query_first(_parse_query(request.path), "q") or _query_first(_parse_query(request.path), "query") or ""
+        query = query.strip()
+        if not query:
+            return _http_error(400, "query is required")
+        params = _parse_query(request.path)
+        mode = (_query_first(params, "mode") or "hybrid").strip()
+        try:
+            limit = min(20, max(1, int(_query_first(params, "limit") or "8")))
+            hops = min(2, max(0, int(_query_first(params, "expand_hops") or "1")))
+        except ValueError:
+            return _http_error(400, "limit and expand_hops must be integers")
+        scope = self.workspaces.scope_for_session_key(decoded_key)
+        store = KnowledgeStore(scope.project_path)
+        try:
+            project = store.get_project(unquote(project_id))
+        except KnowledgeNotFoundError:
+            return _http_error(404, "knowledge project not found")
+        result = KnowledgeRetriever(store).search(project, query, mode=mode, limit=limit, expand_hops=hops)
+        payload = result.to_dict()
+        raw_documents = payload.get("documents")
+        for raw_document in cast(list[Any], raw_documents) if isinstance(raw_documents, list) else []:
+            if isinstance(raw_document, dict):
+                document = cast(dict[str, Any], raw_document)
+                path = str(document.get("path") or "")
+                document["path"] = (
+                    store.wiki_root(project.id).joinpath(path).relative_to(scope.project_path).as_posix()
+                    if path
+                    else path
+                )
+        return _http_json_response(payload)
 
     def _handle_session_automations(self, request: WsRequest, key: str) -> Response:
         if not self.check_api_token(request):

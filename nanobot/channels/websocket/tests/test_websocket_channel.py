@@ -696,6 +696,56 @@ async def test_interaction_response_resolves_state_and_resumes_agent(
 
 
 @pytest.mark.asyncio
+async def test_evidence_request_accepts_natural_message_and_resumes(
+    bus: MagicMock,
+    tmp_path,
+) -> None:
+    sessions = SessionManager(tmp_path / "sessions")
+    session = sessions.get_or_create("websocket:chat-evidence")
+    session.metadata["interaction_request"] = {
+        "id": "interaction-evidence",
+        "pending": True,
+        "status": "pending",
+        "reason": "knowledge_gap",
+        "allow_message_response": True,
+        "accepts_attachments": True,
+        "response_scope": "task",
+        "fields": [],
+        "actions": [{"id": "submit", "label": "提交材料", "style": "primary"}],
+    }
+    sessions.save(session)
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+    channel = WebSocketChannel(
+        {"enabled": True, "allowFrom": ["*"], "host": "127.0.0.1"},
+        bus,
+        gateway=_basic_handler(bus, session_manager=sessions, workspace_path=workspace),
+    )
+    conn = AsyncMock()
+    conn.remote_address = ("127.0.0.1", 50123)
+
+    await channel._dispatch_envelope(
+        conn,
+        "webui-client",
+        {
+            "type": "message",
+            "chat_id": "chat-evidence",
+            "content": "这是补充的统一社会信用代码。",
+            "webui": True,
+        },
+    )
+
+    saved = sessions.get_or_create("websocket:chat-evidence")
+    assert saved.metadata["interaction_request"]["status"] == "resolved"
+    inbound = bus.publish_inbound.await_args.args[0]
+    assert inbound.metadata["evidence_response"] is True
+    assert inbound.metadata["interaction_reason"] == "knowledge_gap"
+    assert inbound.metadata["evidence_scope"] == "task"
+    assert inbound.content.startswith("[Evidence response]")
+    assert "scope=task" in inbound.content
+
+
+@pytest.mark.asyncio
 async def test_webui_message_scope_inherits_persisted_session_scope(
     bus: MagicMock,
     tmp_path,

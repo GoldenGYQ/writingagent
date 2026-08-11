@@ -348,6 +348,9 @@ export interface InteractionRequestPayload {
   fields?: InteractionField[];
   actions?: Array<{ id: string; label: string; style: "primary" | "secondary" | "danger" }>;
   plan_ref?: { id?: string; version?: number } | null;
+  allow_message_response?: boolean;
+  accepts_attachments?: boolean;
+  response_scope?: "task" | "knowledge_candidate";
   change?: {
     tool?: string;
     added?: number;
@@ -586,6 +589,17 @@ export interface SettingsPayload {
     bot_name: string;
     bot_icon: string;
     tool_hint_max_length: number;
+  };
+  knowledge_retrieval?: {
+    parameter_mode: "auto" | "manual";
+    mode: "hybrid" | "vector" | "graph";
+    query_rewrite: "auto" | "manual" | "off";
+    max_queries: number;
+    min_documents: number;
+    top_k: number;
+    expand_hops: number;
+    embedding_backend: "feature_hash" | "fastembed";
+    embedding_model: string;
   };
   model_presets: Array<{
     name: string;
@@ -1124,6 +1138,14 @@ export interface SettingsUpdate {
   botName?: string;
   botIcon?: string;
   toolHintMaxLength?: number;
+  knowledgeRetrievalParameterMode?: "auto" | "manual";
+  knowledgeRetrievalMode?: "hybrid" | "vector" | "graph";
+  knowledgeRetrievalQueryRewrite?: "auto" | "manual" | "off";
+  knowledgeRetrievalMaxQueries?: number;
+  knowledgeRetrievalMinDocuments?: number;
+  knowledgeRetrievalTopK?: number;
+  knowledgeRetrievalExpandHops?: number;
+  knowledgeRetrievalEmbeddingBackend?: "feature_hash" | "fastembed";
 }
 
 export interface ModelConfigurationCreate {
@@ -1480,6 +1502,9 @@ export interface KnowledgeProjectSummary {
   page_count?: number;
   source_count?: number;
   updated_at?: string;
+  review_status?: string;
+  current_revision_id?: string | null;
+  published_revision_id?: string | null;
 }
 
 export interface KnowledgeProjectsPayload {
@@ -1504,6 +1529,9 @@ export interface KnowledgeProjectDetailPayload {
     relations: number;
     pages: number;
     reviews: number;
+    claims: number;
+    evidence: number;
+    changesets: number;
   };
   paths: {
     raw: string;
@@ -1523,9 +1551,96 @@ export interface KnowledgeProjectDetailPayload {
     sources?: string[];
   }>;
   pages_truncated?: boolean;
+  reviews?: Array<{
+    id: string;
+    project_id: string;
+    status: string;
+    checked_pages?: number;
+    issues?: Array<{
+      id: string;
+      kind: string;
+      severity: string;
+      status: string;
+      title?: string;
+      summary?: string;
+      source_refs?: string[];
+      page_refs?: string[];
+      resolution?: string;
+    }>;
+  }>;
+  changesets?: Array<{
+    id: string;
+    project_id: string;
+    status: string;
+    reason?: string;
+    review_id?: string | null;
+    feedback?: string;
+    created_at?: string;
+    updated_at?: string;
+    applied_revision_id?: string | null;
+  }>;
   graph?: {
-    nodes: Array<{ id: string; type?: string; title?: string }>;
-    edges: Array<{ source: string; target: string; relation?: string; evidence?: string }>;
+    directed?: boolean;
+    nodes: Array<{
+      id: string;
+      type?: string;
+      title?: string;
+      community_id?: string;
+      community_label?: string;
+      community_size?: number;
+      centrality?: number;
+      degree?: number;
+      color?: string;
+    }>;
+    edges: Array<{
+      source: string;
+      target: string;
+      relation?: string;
+      evidence?: string;
+      evidence_refs?: Array<Record<string, unknown>>;
+      confidence?: number;
+    }>;
+    communities?: Array<{ id: string; label: string; size: number; color: string; nodes?: string[] }>;
+  };
+}
+
+export interface KnowledgeSearchPayload {
+  version?: number;
+  project_id: string;
+  query: string;
+  mode: "vector" | "graph" | "hybrid";
+  documents: Array<{
+    id: string;
+    path: string;
+    title: string;
+    page_type?: string;
+    type?: string;
+    score?: number;
+    snippet?: string;
+    start_line?: number;
+    end_line?: number;
+    node_id?: string;
+    tags?: string[];
+    sources?: string[];
+  }>;
+  relations: Array<{
+    source: string;
+    target: string;
+    relation?: string;
+    evidence?: string;
+    source_path?: string;
+    start_line?: number;
+    end_line?: number;
+  }>;
+  citations?: Array<Record<string, unknown>>;
+  retrieval?: {
+    index_algorithm?: string;
+    vector_available?: boolean;
+    fallback?: string | null;
+    seed_nodes?: string[];
+    expanded_hops?: number;
+    graph_nodes?: number;
+    graph_relations?: number;
   };
 }
 

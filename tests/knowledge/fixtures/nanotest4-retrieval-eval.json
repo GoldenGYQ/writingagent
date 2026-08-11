@@ -1,0 +1,28 @@
+{
+  "queries": [
+    {
+      "query": "中国长城 ISO9001 质量管理体系认证",
+      "relevant_paths": ["entities/iso9001-cert-016hn23q33292rol.md"]
+    },
+    {
+      "query": "ThinkStation P3 Tower 节能认证证书",
+      "relevant_paths": ["entities/cqc-energy-cert-cqc23701388390.md"]
+    },
+    {
+      "query": "ThinkStation P3 3C 认证和检测报告",
+      "relevant_paths": ["entities/ccc-cert-2016010901848966.md", "entities/ccc-test-report-c03301-230019.md"]
+    },
+    {
+      "query": "中国长城业务连续性 ISO22301 证书",
+      "relevant_paths": ["entities/iso22301-cert-yw23cc004.md", "entities/iso22301-subcert-yw23cc0041.md"]
+    },
+    {
+      "query": "乌鲁木齐市126中学办公家具合同业绩",
+      "relevant_paths": ["entities/contract-126-middle-school-furniture-2023.md"]
+    },
+    {
+      "query": "中国长城公司名称变更通知",
+      "relevant_paths": ["entities/name-change-notice-2023-712.md"]
+    }
+  ]
+}

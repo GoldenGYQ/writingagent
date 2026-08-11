@@ -1,7 +1,9 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import type { CSSProperties, PointerEvent as ReactPointerEvent } from "react";
 import cytoscape from "cytoscape";
 import {
   BookOpen,
+  ClipboardCheck,
   ChevronDown,
   ChevronRight,
   FileText,
@@ -10,25 +12,32 @@ import {
   FileCode2,
   GitBranch,
   Loader2,
+  Maximize2,
   Network,
+  PanelLeftClose,
+  PanelLeftOpen,
   PanelRightOpen,
+  LocateFixed,
   RotateCcw,
   RefreshCw,
   Search,
   SlidersHorizontal,
   X,
+  ZoomIn,
+  ZoomOut,
 } from "lucide-react";
 import { useTranslation } from "react-i18next";
 
 import { FilePreviewPanel } from "@/components/FilePreviewPanel";
+import { DocumentDetailPanel } from "@/components/wiki/DocumentDetailPanel";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { fetchKnowledgeProject, fetchKnowledgeProjects, fetchWorkspaceTree } from "@/lib/api";
-import type { KnowledgeProjectDetailPayload, KnowledgeProjectSummary, WorkspaceTreeNode, WritingChangeSetResult } from "@/lib/types";
+import { fetchKnowledgeProject, fetchKnowledgeProjects, fetchKnowledgeSearch, fetchWorkspaceTree } from "@/lib/api";
+import type { KnowledgeProjectDetailPayload, KnowledgeProjectSummary, KnowledgeSearchPayload, WorkspaceTreeNode, WritingChangeSetResult } from "@/lib/types";
 import { cn } from "@/lib/utils";
 import { useClient } from "@/providers/ClientProvider";
 
-type WikiViewMode = "preview" | "graph";
+type WikiViewMode = "preview" | "graph" | "review";
 type PageBrowserMode = "knowledge" | "files";
 
 const KNOWLEDGE_GROUPS = [
@@ -52,7 +61,13 @@ export function WikiView({ sessionKey, onBackToChat }: WikiViewProps) {
   const [projects, setProjects] = useState<KnowledgeProjectSummary[]>([]);
   const [selectedProjectId, setSelectedProjectId] = useState<string | null>(null);
   const [detail, setDetail] = useState<KnowledgeProjectDetailPayload | null>(null);
+  const [retrieval, setRetrieval] = useState<KnowledgeSearchPayload | null>(null);
+  const [retrievalLoading, setRetrievalLoading] = useState(false);
   const [selectedPath, setSelectedPath] = useState<string | null>(null);
+  const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
+  const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
+  const [isDetailPanelCollapsed, setIsDetailPanelCollapsed] = useState(false);
+  const [detailPanelWidth, setDetailPanelWidth] = useState(400);
   const [query, setQuery] = useState("");
   const [browserMode, setBrowserMode] = useState<PageBrowserMode>("knowledge");
   const [viewMode, setViewMode] = useState<WikiViewMode>("preview");
@@ -77,7 +92,9 @@ export function WikiView({ sessionKey, onBackToChat }: WikiViewProps) {
       setProjects([]);
       setSelectedProjectId(null);
       setDetail(null);
+      setRetrieval(null);
       setSelectedPath(null);
+      setSelectedNodeId(null);
       setError(null);
       return;
     }
@@ -111,6 +128,7 @@ export function WikiView({ sessionKey, onBackToChat }: WikiViewProps) {
     if (!sessionKey || !selectedProjectId) {
       setDetail(null);
       setSelectedPath(null);
+      setSelectedNodeId(null);
       return;
     }
     let cancelled = false;
@@ -120,15 +138,14 @@ export function WikiView({ sessionKey, onBackToChat }: WikiViewProps) {
       .then((payload) => {
         if (cancelled) return;
         setDetail(payload);
-        setSelectedPath((current) => {
-          if (current && payload.pages.some((page) => page.path === current)) return current;
-          return payload.pages[0]?.path ?? null;
-        });
+        setSelectedPath((current) => current && payload.pages.some((page) => page.path === current) ? current : null);
+        setSelectedNodeId(null);
       })
       .catch((reason: unknown) => {
         if (!cancelled) {
           setDetail(null);
           setSelectedPath(null);
+          setSelectedNodeId(null);
           setDetailError(reason instanceof Error ? reason.message : t("wiki.detailFailed", { defaultValue: "Could not load this Wiki project." }));
         }
       })
@@ -139,6 +156,32 @@ export function WikiView({ sessionKey, onBackToChat }: WikiViewProps) {
       cancelled = true;
     };
   }, [getToken, refreshVersion, selectedProjectId, sessionKey, t]);
+
+  useEffect(() => {
+    if (!sessionKey || !selectedProjectId || browserMode !== "knowledge" || query.trim().length < 2) {
+      setRetrieval(null);
+      setRetrievalLoading(false);
+      return;
+    }
+    let cancelled = false;
+    const timer = window.setTimeout(() => {
+      setRetrievalLoading(true);
+      void fetchKnowledgeSearch(getToken(), sessionKey, selectedProjectId, query.trim(), { mode: "hybrid", limit: 8, expandHops: 1 })
+        .then((payload) => {
+          if (!cancelled) setRetrieval(payload);
+        })
+        .catch(() => {
+          if (!cancelled) setRetrieval(null);
+        })
+        .finally(() => {
+          if (!cancelled) setRetrievalLoading(false);
+        });
+    }, 260);
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timer);
+    };
+  }, [browserMode, getToken, query, selectedProjectId, sessionKey]);
 
   useEffect(() => {
     if (!sessionKey || browserMode !== "files") return;
@@ -164,14 +207,48 @@ export function WikiView({ sessionKey, onBackToChat }: WikiViewProps) {
   }, [browserMode, getToken, refreshVersion, sessionKey]);
 
   const selectedProject = projects.find((project) => project.id === selectedProjectId) ?? null;
-  const openWikiReference = (reference: string) => {
+  const pageForPath = useCallback((path: string | null) => {
+    if (!path || !detail) return null;
+    return detail.pages.find((page) => page.path === path) ?? null;
+  }, [detail]);
+  const nodeForPath = useCallback((path: string | null) => {
+    if (!path || !detail?.graph) return null;
+    const page = pageForPath(path);
+    return detail.graph.nodes.find((node) => resolveGraphPagePath(node.id, node.title ?? "", detail.pages) === path || node.id === page?.slug || node.title === page?.title) ?? null;
+  }, [detail, pageForPath]);
+  const selectDocumentPath = useCallback((path: string, openPreview = true) => {
+    setSelectedPath(path);
+    setSelectedNodeId(nodeForPath(path)?.id ?? null);
+    if (openPreview) setViewMode("preview");
+  }, [nodeForPath]);
+  const selectRetrievalDocument = useCallback((document: KnowledgeSearchPayload["documents"][number]) => {
+    selectDocumentPath(document.path);
+    if (document.node_id) setSelectedNodeId(document.node_id);
+  }, [selectDocumentPath]);
+  const selectGraphNode = useCallback((nodeId: string, title: string) => {
+    setSelectedNodeId(nodeId);
+    const path = detail ? resolveGraphPagePath(nodeId, title, detail.pages) : null;
+    if (path) setSelectedPath(path);
+  }, [detail]);
+  const clearGraphSelection = useCallback(() => {
+    setSelectedNodeId(null);
+    setSelectedPath(null);
+  }, []);
+  const openGraphPath = useCallback((path: string) => {
+    selectDocumentPath(path, false);
+  }, [selectDocumentPath]);
+  const toggleDetailPanel = useCallback(() => {
+    setIsDetailPanelCollapsed((value) => !value);
+  }, []);
+  const openWikiReference = useCallback((reference: string) => {
     if (!detail) return;
     const targetPath = resolveGraphPagePath(reference, reference, detail.pages);
     if (targetPath) {
-      setSelectedPath(targetPath);
-      setViewMode("preview");
+      selectDocumentPath(targetPath, viewMode !== "graph");
+      return;
     }
-  };
+    if (reference) setSelectedPath(reference);
+  }, [detail, selectDocumentPath, viewMode]);
   const filteredPages = useMemo(() => {
     const needle = query.trim().toLocaleLowerCase();
     return (detail?.pages ?? []).filter((page) => {
@@ -185,10 +262,28 @@ export function WikiView({ sessionKey, onBackToChat }: WikiViewProps) {
   const selectProject = (projectId: string) => {
     setSelectedProjectId(projectId);
     setSelectedPath(null);
+    setSelectedNodeId(null);
     setQuery("");
+    setRetrieval(null);
     setBrowserMode("knowledge");
     setViewMode("preview");
   };
+
+  const startDetailResize = useCallback((event: ReactPointerEvent<HTMLButtonElement>) => {
+    event.preventDefault();
+    const startX = event.clientX;
+    const startWidth = detailPanelWidth;
+    const onMove = (moveEvent: PointerEvent) => {
+      const nextWidth = startWidth + startX - moveEvent.clientX;
+      setDetailPanelWidth(Math.min(560, Math.max(340, nextWidth)));
+    };
+    const onUp = () => {
+      window.removeEventListener("pointermove", onMove);
+      window.removeEventListener("pointerup", onUp);
+    };
+    window.addEventListener("pointermove", onMove);
+    window.addEventListener("pointerup", onUp);
+  }, [detailPanelWidth]);
 
   return (
     <div className="flex h-full min-h-0 flex-col overflow-hidden bg-background" data-testid="wiki-view">
@@ -225,6 +320,7 @@ export function WikiView({ sessionKey, onBackToChat }: WikiViewProps) {
           size="icon"
           className="h-8 w-8 rounded-full"
           aria-label={t("wiki.refresh", { defaultValue: "Refresh Wiki" })}
+          title={t("wiki.refresh", { defaultValue: "Refresh Wiki" })}
           onClick={() => setRefreshVersion((value) => value + 1)}
         >
           <RefreshCw className={cn("h-3.5 w-3.5", (loadingProjects || loadingDetail) && "animate-spin motion-reduce:animate-none")} />
@@ -243,12 +339,15 @@ export function WikiView({ sessionKey, onBackToChat }: WikiViewProps) {
           <PageList
             detail={detail}
             selectedPath={selectedPath}
+            collapsed={isSidebarCollapsed}
             query={query}
             browserMode={browserMode}
             workspaceEntries={workspaceEntries}
             workspaceLoading={workspaceLoading}
             workspaceError={workspaceError}
             filteredPages={filteredPages}
+            retrieval={retrieval}
+            retrievalLoading={retrievalLoading}
             loading={loadingDetail}
             error={detailError || error}
             onQueryChange={setQuery}
@@ -256,10 +355,9 @@ export function WikiView({ sessionKey, onBackToChat }: WikiViewProps) {
               setBrowserMode(mode);
               setQuery("");
             }}
-            onSelectPath={(path) => {
-              setSelectedPath(path);
-              setViewMode("preview");
-            }}
+            onSelectPath={(path) => selectDocumentPath(path)}
+            onSelectRetrieval={selectRetrievalDocument}
+            onToggleCollapsed={() => setIsSidebarCollapsed((value) => !value)}
           />
           <main className="flex min-h-0 min-w-0 flex-1 flex-col bg-background">
             <div className="flex h-11 shrink-0 items-center gap-2 border-b border-border/55 px-4">
@@ -268,15 +366,63 @@ export function WikiView({ sessionKey, onBackToChat }: WikiViewProps) {
               <div className="flex items-center rounded-lg border border-border/60 p-0.5">
                 <button type="button" aria-pressed={viewMode === "graph"} onClick={() => setViewMode("graph")} disabled={!detail?.graph} className={cn("flex items-center gap-1 rounded-md px-2 py-1 text-[10px]", viewMode === "graph" ? "bg-accent text-foreground" : "text-muted-foreground hover:text-foreground", !detail?.graph && "cursor-not-allowed opacity-45")}><Network className="h-3.5 w-3.5" aria-hidden />Graph</button>
                 <button type="button" aria-pressed={viewMode === "preview"} onClick={() => setViewMode("preview")} className={cn("flex items-center gap-1 rounded-md px-2 py-1 text-[10px]", viewMode === "preview" ? "bg-accent text-foreground" : "text-muted-foreground hover:text-foreground")}><FileCode2 className="h-3.5 w-3.5" aria-hidden />Preview</button>
+                <button type="button" aria-pressed={viewMode === "review"} onClick={() => setViewMode("review")} className={cn("flex items-center gap-1 rounded-md px-2 py-1 text-[10px]", viewMode === "review" ? "bg-accent text-foreground" : "text-muted-foreground hover:text-foreground")}><ClipboardCheck className="h-3.5 w-3.5" aria-hidden />Review</button>
               </div>
-              {viewMode === "graph" && selectedPath ? <Button type="button" variant="ghost" size="icon" className="h-7 w-7" aria-label="Close file preview" onClick={() => setSelectedPath(null)}><X className="h-3.5 w-3.5" aria-hidden /></Button> : null}
+              {viewMode === "graph" && selectedPath ? <Button type="button" variant="ghost" size="icon" className="h-7 w-7" aria-label="Close file preview" title="Close file preview" onClick={() => { setSelectedPath(null); setSelectedNodeId(null); }}><X className="h-3.5 w-3.5" aria-hidden /></Button> : null}
             </div>
-            {viewMode === "graph" && detail ? (
-              <div className="min-h-0 flex-1 overflow-auto xl:overflow-hidden">
-                <div className="flex min-h-full flex-col xl:h-full xl:flex-row">
-                  <div className="min-h-[340px] min-w-0 flex-1 border-b border-border/55 xl:min-h-0 xl:border-b-0 xl:border-r"><WikiGraph detail={detail} onSelectPath={setSelectedPath} /></div>
-                  {selectedPath ? <section className="min-h-[420px] min-w-0 flex-1 xl:min-h-0 xl:w-[46%]" aria-label="Graph selected file"><FilePreviewPanel sessionKey={sessionKey} path={selectedPath} token={getToken()} embedded onClose={() => setSelectedPath(null)} onOpenFilePreview={setSelectedPath} onOpenReference={openWikiReference} onSaveContent={saveContent} /></section> : <GraphSelectionHint />}
+            {viewMode === "review" && detail ? (
+              <KnowledgeReviewPanel detail={detail} onSelectPath={setSelectedPath} />
+            ) : viewMode === "graph" && detail ? (
+              <div className="flex min-h-0 flex-1 flex-col overflow-auto xl:flex-row xl:overflow-hidden">
+                <div className="min-h-[420px] min-w-0 flex-1 xl:min-h-0">
+                  <WikiGraph
+                    detail={detail}
+                    selectedNodeId={selectedNodeId}
+                    onSelectNode={selectGraphNode}
+                    onClearSelection={clearGraphSelection}
+                    onOpenPath={openGraphPath}
+                    onToggleDetailPanel={toggleDetailPanel}
+                    isDetailPanelCollapsed={isDetailPanelCollapsed}
+                  />
                 </div>
+                {isDetailPanelCollapsed ? (
+                  <button
+                    type="button"
+                    className="flex h-11 w-full shrink-0 items-center justify-center border-t border-border/65 bg-card text-muted-foreground hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring xl:h-auto xl:w-11 xl:items-start xl:border-l xl:border-t-0 xl:pt-3"
+                    onClick={() => setIsDetailPanelCollapsed(false)}
+                    aria-label="Expand document details"
+                    title="Expand document details"
+                  >
+                    <PanelRightOpen className="h-4 w-4" aria-hidden />
+                  </button>
+                ) : (
+                  <div className="relative min-h-[420px] min-w-0 flex-1 xl:min-h-0 xl:w-[var(--wiki-detail-width)] xl:flex-none" style={{ "--wiki-detail-width": `${detailPanelWidth}px` } as CSSProperties}>
+                    <button
+                      type="button"
+                      className="absolute -left-2 top-1/2 z-20 hidden h-16 w-4 -translate-y-1/2 cursor-col-resize items-center justify-center rounded-full border border-border/70 bg-card text-muted-foreground shadow-sm hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring xl:flex"
+                      onPointerDown={startDetailResize}
+                      aria-label="Resize document details"
+                      title="Drag to resize document details"
+                    >
+                      <span className="h-8 w-0.5 rounded-full bg-border" aria-hidden />
+                    </button>
+                    <DocumentDetailPanel
+                      sessionKey={sessionKey}
+                      token={getToken()}
+                      detail={detail}
+                      node={selectedNodeId ? detail.graph?.nodes.find((candidate) => candidate.id === selectedNodeId) ?? null : null}
+                      page={pageForPath(selectedPath)}
+                      path={selectedPath}
+                      onClose={() => {
+                        setSelectedNodeId(null);
+                        setSelectedPath(null);
+                      }}
+                      onOpenPath={(path) => selectDocumentPath(path, false)}
+                      onOpenReference={openWikiReference}
+                      onSaveContent={saveContent}
+                    />
+                  </div>
+                )}
               </div>
             ) : selectedPath ? (
               <FilePreviewPanel sessionKey={sessionKey} path={selectedPath} token={getToken()} embedded onClose={() => setSelectedPath(null)} onOpenFilePreview={setSelectedPath} onOpenReference={openWikiReference} onSaveContent={saveContent} />
@@ -296,31 +442,41 @@ export function WikiView({ sessionKey, onBackToChat }: WikiViewProps) {
 function PageList({
   detail,
   selectedPath,
+  collapsed,
   query,
   browserMode,
   workspaceEntries,
   workspaceLoading,
   workspaceError,
   filteredPages,
+  retrieval,
+  retrievalLoading,
   loading,
   error,
   onQueryChange,
   onBrowserModeChange,
   onSelectPath,
+  onSelectRetrieval,
+  onToggleCollapsed,
 }: {
   detail: KnowledgeProjectDetailPayload | null;
   selectedPath: string | null;
+  collapsed: boolean;
   query: string;
   browserMode: PageBrowserMode;
   workspaceEntries: WorkspaceTreeNode[];
   workspaceLoading: boolean;
   workspaceError: string | null;
   filteredPages: KnowledgeProjectDetailPayload["pages"];
+  retrieval: KnowledgeSearchPayload | null;
+  retrievalLoading: boolean;
   loading: boolean;
   error: string | null;
   onQueryChange: (value: string) => void;
   onBrowserModeChange: (mode: PageBrowserMode) => void;
   onSelectPath: (path: string) => void;
+  onSelectRetrieval: (document: KnowledgeSearchPayload["documents"][number]) => void;
+  onToggleCollapsed: () => void;
 }) {
   const { t } = useTranslation();
   const [expandedGroups, setExpandedGroups] = useState<Record<string, boolean>>({
@@ -346,13 +502,27 @@ function PageList({
     [query, workspaceEntries],
   );
 
+  if (collapsed) {
+    return (
+      <aside className="flex w-12 shrink-0 flex-col items-center border-r border-border/65 bg-card/40 pt-3" aria-label={t("wiki.pages", { defaultValue: "Wiki navigator" })}>
+        <button type="button" className="inline-flex h-9 w-9 items-center justify-center rounded-lg text-muted-foreground hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring" onClick={onToggleCollapsed} aria-label="Expand knowledge navigator" title="Expand knowledge navigator">
+          <PanelLeftOpen className="h-4 w-4" aria-hidden />
+        </button>
+        <span className="mt-3 [writing-mode:vertical-rl] text-[10px] font-medium tracking-[0.12em] text-muted-foreground">Knowledge</span>
+      </aside>
+    );
+  }
+
   return (
-    <aside className="flex min-h-0 w-full shrink-0 flex-col border-b border-border/65 md:w-[330px] md:border-b-0 md:border-r lg:w-[360px] xl:w-[390px]" aria-label={t("wiki.pages", { defaultValue: "Wiki navigator" })}>
+    <aside className="flex min-h-0 w-full shrink-0 flex-col border-b border-border/65 md:w-[268px] md:border-b-0 md:border-r lg:w-[280px] xl:w-[280px]" aria-label={t("wiki.pages", { defaultValue: "Wiki navigator" })}>
       <div className="shrink-0 border-b border-border/55 px-4 py-3">
         <div className="flex items-center gap-2">
           <span className="text-sm font-semibold text-foreground">{t("wiki.pages", { defaultValue: "Pages" })}</span>
           <span className="text-[11px] tabular-nums text-muted-foreground">{browserMode === "knowledge" ? detail?.pages.length ?? 0 : countWorkspaceFiles(workspaceEntries)}</span>
-          <div className="ml-auto flex rounded-lg border border-border/60 p-0.5" role="tablist" aria-label="Wiki navigator mode">
+          <button type="button" className="ml-auto inline-flex h-8 w-8 items-center justify-center rounded-lg text-muted-foreground hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring" onClick={onToggleCollapsed} aria-label="Collapse knowledge navigator" title="Collapse knowledge navigator">
+            <PanelLeftClose className="h-4 w-4" aria-hidden />
+          </button>
+          <div className="flex rounded-lg border border-border/60 p-0.5" role="tablist" aria-label="Wiki navigator mode">
             <button type="button" role="tab" aria-selected={browserMode === "knowledge"} onClick={() => onBrowserModeChange("knowledge")} className={cn("rounded-md px-2.5 py-1 text-[10px]", browserMode === "knowledge" ? "bg-accent text-foreground" : "text-muted-foreground hover:text-foreground")}>知识</button>
             <button type="button" role="tab" aria-selected={browserMode === "files"} onClick={() => onBrowserModeChange("files")} className={cn("rounded-md px-2.5 py-1 text-[10px]", browserMode === "files" ? "bg-accent text-foreground" : "text-muted-foreground hover:text-foreground")}>文件</button>
           </div>
@@ -366,6 +536,29 @@ function PageList({
       <div className="min-h-0 flex-1 overflow-y-auto p-2.5">
         {browserMode === "knowledge" ? (
           <>
+            {retrievalLoading ? <div className="mb-2 flex items-center gap-2 rounded-lg border border-primary/15 bg-primary/5 px-2.5 py-2 text-[10px] text-muted-foreground"><Loader2 className="h-3 w-3 animate-spin motion-reduce:animate-none" />Searching Wiki + graph…</div> : null}
+            {!retrievalLoading && retrieval && retrieval.documents.length > 0 ? (
+              <div className="mb-3 rounded-lg border border-primary/15 bg-primary/5 p-2">
+                <div className="mb-1.5 flex items-center justify-between px-1 text-[10px] font-semibold text-foreground">
+                  <span>Knowledge results</span>
+                  <span className="font-mono text-muted-foreground">{retrieval.documents.length} · {retrieval.relations.length} links</span>
+                </div>
+                <div className="space-y-0.5">
+                  {retrieval.documents.slice(0, 5).map((document) => (
+                    <button
+                      key={document.id}
+                      type="button"
+                      className="flex w-full items-start gap-2 rounded-md px-1.5 py-1.5 text-left hover:bg-background/80"
+                      onClick={() => onSelectRetrieval(document)}
+                      title={document.path}
+                    >
+                      <Search className="mt-0.5 h-3 w-3 shrink-0 text-primary" aria-hidden />
+                      <span className="min-w-0 flex-1"><span className="block truncate text-[11px] font-medium text-foreground">{document.title}</span><span className="block truncate text-[10px] text-muted-foreground">{document.page_type || document.type || "page"} · {document.score?.toFixed(2) ?? "-"}</span></span>
+                    </button>
+                  ))}
+                </div>
+              </div>
+            ) : null}
             {loading ? <div className="flex items-center gap-2 px-2 py-4 text-xs text-muted-foreground"><Loader2 className="h-3.5 w-3.5 animate-spin" />Loading pages...</div> : null}
             {error ? <p className="px-2 py-4 text-xs text-destructive">{error}</p> : null}
             {!loading && !error && filteredPages.length === 0 ? <p className="px-2 py-4 text-xs text-muted-foreground">{t("wiki.noMatchingPages", { defaultValue: "No matching Wiki pages." })}</p> : null}
@@ -458,14 +651,33 @@ const DEFAULT_GRAPH_LAYOUT: GraphLayoutSettings = {
 };
 
 const GRAPH_COMMUNITY_META: Record<string, { label: string; color: string }> = {
-  entity: { label: "实体", color: "#0ea5e9" },
-  concept: { label: "概念", color: "#8b5cf6" },
-  source: { label: "资料", color: "#f59e0b" },
-  comparison: { label: "综合", color: "#f43f5e" },
-  synthesis: { label: "综合", color: "#f43f5e" },
-  overview: { label: "概览", color: "#f59e0b" },
-  query: { label: "查询", color: "#10b981" },
+  entity: { label: "实体", color: "#5b9cf6" },
+  concept: { label: "概念", color: "#b475f6" },
+  source: { label: "资料", color: "#ff8a3d" },
+  comparison: { label: "比较", color: "#f06d8c" },
+  synthesis: { label: "综合", color: "#f06d8c" },
+  overview: { label: "概览", color: "#94a3b8" },
+  query: { label: "查询", color: "#19c56f" },
 };
+
+type GraphHighlightMode = "community" | "type" | "tag";
+type GraphHighlightSelection = { mode: GraphHighlightMode; key: string } | null;
+
+const GRAPH_TAG_COLORS = [
+  "#38bdf8",
+  "#34d399",
+  "#fb923c",
+  "#f472b6",
+  "#a78bfa",
+  "#facc15",
+  "#2dd4bf",
+];
+
+function graphTagColor(tag: string): string {
+  let hash = 0;
+  for (const character of tag) hash = (hash * 31 + character.codePointAt(0)!) >>> 0;
+  return GRAPH_TAG_COLORS[hash % GRAPH_TAG_COLORS.length];
+}
 
 function runGraphLayout(instance: cytoscape.Core, settings: GraphLayoutSettings) {
   const edgeElasticity = Math.round(8 + (1 - settings.linkForce) * 88);
@@ -534,6 +746,7 @@ type WikiGraphEdge = { source: string; target: string; relation?: string };
 type GraphScope = { mode: "all" } | { mode: "neighborhood"; nodeId: string };
 type MiniMapPoint = { id: string; x: number; y: number; color: string };
 type MiniMapEdge = { source: string; target: string };
+type GraphLegendEntry = { key: string; label: string; count: number; color: string };
 
 export function normalizeWikiGraphEdges(edges: WikiGraphEdge[], nodeIds: Set<string>, limit = 320): WikiGraphEdge[] {
   const undirected = new Map<string, WikiGraphEdge>();
@@ -573,7 +786,122 @@ function focusGraphNode(instance: cytoscape.Core, nodeId: string) {
   instance.animate({ fit: { eles: node.closedNeighborhood(), padding: 96 } }, { duration: 420 });
 }
 
-function WikiGraph({ detail, onSelectPath }: { detail: KnowledgeProjectDetailPayload; onSelectPath: (path: string) => void }) {
+function GraphHighlightPanel({
+  colorMode,
+  entries,
+  totalNodes,
+  selection,
+  hoveredRelation,
+  onColorModeChange,
+  onSelectionChange,
+}: {
+  colorMode: GraphHighlightMode;
+  entries: GraphLegendEntry[];
+  totalNodes: number;
+  selection: GraphHighlightSelection;
+  hoveredRelation: string | null;
+  onColorModeChange: (mode: GraphHighlightMode) => void;
+  onSelectionChange: (selection: GraphHighlightSelection) => void;
+}) {
+  const modeLabels: Record<GraphHighlightMode, string> = {
+    community: "社区",
+    type: "节点类型",
+    tag: "标签",
+  };
+  return (
+    <div
+      className="pointer-events-auto absolute left-3 top-3 z-10 w-[min(17rem,calc(100%-1.5rem))] rounded-xl border border-border/70 bg-card/95 p-3 shadow-xl backdrop-blur"
+      aria-label="Graph communities"
+    >
+      <div className="flex items-start justify-between gap-2">
+        <div>
+          <p className="text-xs font-semibold text-foreground">图谱高亮</p>
+          <p className="mt-0.5 text-[10px] text-muted-foreground">按维度着色并定位相关节点</p>
+        </div>
+        {selection ? (
+          <button
+            type="button"
+            className="shrink-0 rounded-md px-1.5 py-1 text-[10px] text-muted-foreground hover:bg-muted hover:text-foreground"
+            onClick={() => onSelectionChange(null)}
+          >
+            清除
+          </button>
+        ) : null}
+      </div>
+      <div className="mt-3 grid grid-cols-3 gap-1 rounded-lg bg-muted/55 p-1" role="tablist" aria-label="Graph color mode">
+        {(Object.keys(modeLabels) as GraphHighlightMode[]).map((mode) => (
+          <button
+            key={mode}
+            type="button"
+            role="tab"
+            aria-selected={colorMode === mode}
+            onClick={() => onColorModeChange(mode)}
+            className={cn(
+              "rounded-md px-1.5 py-1.5 text-[10px] font-medium transition-colors",
+              colorMode === mode ? "bg-background text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground",
+            )}
+          >
+            {modeLabels[mode]}
+          </button>
+        ))}
+      </div>
+      <div className="mt-2 max-h-52 space-y-0.5 overflow-y-auto pr-0.5">
+        <button
+          type="button"
+          aria-pressed={selection === null}
+          onClick={() => onSelectionChange(null)}
+          className={cn(
+            "flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-left text-xs transition-colors",
+            selection === null ? "bg-primary/10 text-foreground" : "text-muted-foreground hover:bg-muted/70 hover:text-foreground",
+          )}
+        >
+          <span className="h-2.5 w-2.5 rounded-full bg-muted-foreground/50" aria-hidden />
+          <span className="min-w-0 flex-1 truncate">全部</span>
+          <span className="font-mono text-[10px] text-muted-foreground">{totalNodes}</span>
+        </button>
+        {entries.length > 0 ? entries.map((entry) => {
+          const active = selection?.mode === colorMode && selection.key === entry.key;
+          return (
+            <button
+              key={entry.key}
+              type="button"
+              aria-pressed={active}
+              onClick={() => onSelectionChange(active ? null : { mode: colorMode, key: entry.key })}
+              className={cn(
+                "flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-left text-xs transition-colors",
+                active ? "bg-primary/10 text-foreground" : "text-muted-foreground hover:bg-muted/70 hover:text-foreground",
+              )}
+              title={`Highlight ${entry.label}`}
+            >
+              <span className="h-2.5 w-2.5 shrink-0 rounded-full" style={{ backgroundColor: entry.color }} aria-hidden />
+              <span className="min-w-0 flex-1 truncate">{entry.label}</span>
+              <span className="font-mono text-[10px] text-muted-foreground">{entry.count}</span>
+            </button>
+          );
+        }) : <p className="px-2 py-3 text-[10px] text-muted-foreground">当前维度暂无可选项</p>}
+      </div>
+      {hoveredRelation ? <div className="mt-2 truncate rounded-md bg-muted/70 px-2 py-1.5 text-[10px] text-muted-foreground" title={hoveredRelation}>关系：{hoveredRelation}</div> : null}
+    </div>
+  );
+}
+
+function WikiGraph({
+  detail,
+  selectedNodeId,
+  onSelectNode,
+  onClearSelection,
+  onOpenPath,
+  onToggleDetailPanel,
+  isDetailPanelCollapsed,
+}: {
+  detail: KnowledgeProjectDetailPayload;
+  selectedNodeId: string | null;
+  onSelectNode: (nodeId: string, title: string) => void;
+  onClearSelection: () => void;
+  onOpenPath: (path: string) => void;
+  onToggleDetailPanel: () => void;
+  isDetailPanelCollapsed: boolean;
+}) {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const graphRef = useRef<cytoscape.Core | null>(null);
   const miniMapSyncRef = useRef<(() => void) | null>(null);
@@ -581,7 +909,10 @@ function WikiGraph({ detail, onSelectPath }: { detail: KnowledgeProjectDetailPay
   const [showControls, setShowControls] = useState(true);
   const [settings, setSettings] = useState<GraphLayoutSettings>(DEFAULT_GRAPH_LAYOUT);
   const [nodeQuery, setNodeQuery] = useState("");
-  const [activeCommunity, setActiveCommunity] = useState<string | null>(null);
+  const [labelMode, setLabelMode] = useState<"smart" | "all">("smart");
+  const [hoveredNodeId, setHoveredNodeId] = useState<string | null>(null);
+  const [colorMode, setColorMode] = useState<GraphHighlightMode>("community");
+  const [highlightSelection, setHighlightSelection] = useState<GraphHighlightSelection>(null);
   const [hoveredRelation, setHoveredRelation] = useState<string | null>(null);
   const [graphScope, setGraphScope] = useState<GraphScope>({ mode: "all" });
   const [contextMenu, setContextMenu] = useState<{ nodeId: string; title: string; x: number; y: number } | null>(null);
@@ -592,18 +923,67 @@ function WikiGraph({ detail, onSelectPath }: { detail: KnowledgeProjectDetailPay
     if (!graph) return 0;
     return normalizeWikiGraphEdges(graph.edges, new Set(graph.nodes.map((node) => node.id))).length;
   }, [graph]);
-  const communities = useMemo(() => {
-    const counts = new Map<string, number>();
-    for (const node of graph?.nodes ?? []) {
-      const type = node.type || "entity";
-      counts.set(type, (counts.get(type) ?? 0) + 1);
+  const pageByReference = useMemo(() => {
+    const values = new Map<string, KnowledgeProjectDetailPayload["pages"][number]>();
+    for (const page of detail.pages) {
+      for (const reference of [page.slug, page.title, page.path]) {
+        if (reference) values.set(reference.toLocaleLowerCase(), page);
+      }
     }
-    return Array.from(counts.entries()).map(([key, count]) => ({
-      key,
-      count,
-      ...(GRAPH_COMMUNITY_META[key] ?? { label: key, color: "hsl(var(--primary))" }),
-    }));
+    return values;
+  }, [detail.pages]);
+  const graphNodeTags = useMemo(() => {
+    const values = new Map<string, string[]>();
+    for (const node of graph?.nodes ?? []) {
+      const page = pageByReference.get(node.id.toLocaleLowerCase())
+        ?? pageByReference.get((node.title || "").toLocaleLowerCase());
+      values.set(node.id, page?.tags?.filter(Boolean) ?? []);
+    }
+    return values;
+  }, [graph?.nodes, pageByReference]);
+  const communities = useMemo<GraphLegendEntry[]>(() => {
+    const values = new Map<string, GraphLegendEntry>();
+    const catalog = new Map(
+      (graph?.communities ?? []).map((community) => [community.id, community]),
+    );
+    for (const node of graph?.nodes ?? []) {
+      const key = node.community_id || node.type || "entity";
+      const fallback = GRAPH_COMMUNITY_META[node.type || "entity"] ?? { label: key, color: "hsl(var(--primary))" };
+      const catalogEntry = catalog.get(key);
+      const current = values.get(key);
+      if (current) current.count = catalogEntry?.size ?? current.count + 1;
+      else values.set(key, {
+        key,
+        count: catalogEntry?.size ?? 1,
+        label: node.community_label || catalogEntry?.label || fallback.label,
+        color: node.color || catalogEntry?.color || fallback.color,
+      });
+    }
+    return Array.from(values.values()).sort((left, right) => right.count - left.count || left.label.localeCompare(right.label));
   }, [graph?.nodes]);
+  const nodeTypes = useMemo<GraphLegendEntry[]>(() => {
+    const values = new Map<string, GraphLegendEntry>();
+    for (const node of graph?.nodes ?? []) {
+      const key = node.type || "other";
+      const meta = GRAPH_COMMUNITY_META[key] ?? { label: "其他", color: "#94a3b8" };
+      const current = values.get(key);
+      if (current) current.count += 1;
+      else values.set(key, { key, count: 1, label: meta.label, color: meta.color });
+    }
+    return Array.from(values.values()).sort((left, right) => right.count - left.count || left.label.localeCompare(right.label));
+  }, [graph?.nodes]);
+  const tags = useMemo<GraphLegendEntry[]>(() => {
+    const values = new Map<string, GraphLegendEntry>();
+    for (const node of graph?.nodes ?? []) {
+      for (const tag of graphNodeTags.get(node.id) ?? []) {
+        const current = values.get(tag);
+        if (current) current.count += 1;
+        else values.set(tag, { key: tag, count: 1, label: tag, color: graphTagColor(tag) });
+      }
+    }
+    return Array.from(values.values()).sort((left, right) => right.count - left.count || left.label.localeCompare(right.label));
+  }, [graph?.nodes, graphNodeTags]);
+  const legendEntries = colorMode === "community" ? communities : colorMode === "type" ? nodeTypes : tags;
   useEffect(() => {
     const container = containerRef.current;
     if (!container || !graph) return undefined;
@@ -622,23 +1002,31 @@ function WikiGraph({ detail, onSelectPath }: { detail: KnowledgeProjectDetailPay
       instance = cytoscape({
         container,
         elements: [
-          ...nodes.map((node) => ({ data: { id: node.id, label: (node.title || node.id).slice(0, 26), title: node.title || node.id, type: node.type || "entity", degree: degreeByNode.get(node.id) ?? 0 } })),
+          ...nodes.map((node) => ({ data: {
+            id: node.id,
+            label: (node.title || node.id).slice(0, 26),
+            title: node.title || node.id,
+            type: node.type || "entity",
+            degree: node.degree ?? degreeByNode.get(node.id) ?? 0,
+            important: (node.centrality ?? 0) >= 0.55 || (node.degree ?? degreeByNode.get(node.id) ?? 0) >= Math.max(3, maxDegree * 0.6),
+            communityId: node.community_id || node.type || "entity",
+            communityColor: node.color || GRAPH_COMMUNITY_META[node.type || "entity"]?.color || "hsl(var(--primary))",
+            tags: graphNodeTags.get(node.id) ?? [],
+            color: node.color || GRAPH_COMMUNITY_META[node.type || "entity"]?.color || "hsl(var(--primary))",
+          } })),
           ...edges.map((edge, index) => ({ data: { id: `${edge.source}:${edge.target}:${index}`, source: edge.source, target: edge.target, label: edge.relation || "related" } })),
         ],
         layout: { name: "preset" },
         style: [
-          { selector: "node", style: { "background-color": "hsl(var(--primary))", "background-opacity": 0.82, color: "hsl(var(--foreground))", label: "data(label)", "font-size": 9, "text-wrap": "ellipsis", "text-max-width": "96px", "text-valign": "center", "text-halign": "center", width: `mapData(degree, 0, ${maxDegree}, 24, 64)`, height: `mapData(degree, 0, ${maxDegree}, 24, 64)` } },
+          { selector: "node", style: { "background-color": "data(color)", "background-opacity": 0.82, color: "hsl(var(--foreground))", label: "", "font-size": 9, "text-wrap": "ellipsis", "text-max-width": "96px", "text-valign": "center", "text-halign": "center", width: `mapData(degree, 0, ${maxDegree}, 24, 64)`, height: `mapData(degree, 0, ${maxDegree}, 24, 64)` } },
+          { selector: "node.graph-label-visible", style: { label: "data(label)" } },
           { selector: "edge", style: { width: 1, "line-color": "hsl(var(--muted-foreground))", "line-opacity": 0.32, "curve-style": "bezier" } },
           { selector: ".graph-dimmed", style: { opacity: 0.16 } },
           { selector: "node.graph-highlighted", style: { "border-width": 3, "border-color": "hsl(var(--primary))", "border-opacity": 0.95, "background-opacity": 1 } },
+          { selector: "node.graph-selected", style: { "border-width": 4, "border-color": "hsl(var(--primary))", "border-opacity": 1, "background-opacity": 1, "z-index": 20 } },
           { selector: "edge.graph-highlighted", style: { width: 3, "line-color": "hsl(var(--primary))", "line-opacity": 0.9 } },
           { selector: "node.graph-search-match", style: { "border-width": 4, "border-color": "#f59e0b", "border-opacity": 1, "background-opacity": 1 } },
-          { selector: ".graph-community-muted", style: { opacity: 0.12 } },
-          { selector: 'node[type = "entity"]', style: { "background-color": "#0ea5e9" } },
-          { selector: 'node[type = "concept"]', style: { "background-color": "#8b5cf6" } },
-          { selector: 'node[type = "source"]', style: { "background-color": "#f59e0b" } },
-          { selector: 'node[type = "comparison"], node[type = "synthesis"]', style: { "background-color": "#f43f5e" } },
-          { selector: 'node[type = "query"]', style: { "background-color": "#10b981" } },
+          { selector: ".graph-filter-muted", style: { opacity: 0.12 } },
         ],
         userZoomingEnabled: true,
         userPanningEnabled: true,
@@ -674,7 +1062,7 @@ function WikiGraph({ detail, onSelectPath }: { detail: KnowledgeProjectDetailPay
               id: node.id(),
               x: 6 + ((position.x - minX) / width) * 88,
               y: 6 + ((position.y - minY) / height) * 88,
-              color: GRAPH_COMMUNITY_META[type]?.color ?? "hsl(var(--primary))",
+              color: String(node.data("color") ?? GRAPH_COMMUNITY_META[type]?.color ?? "hsl(var(--primary))"),
             };
           }),
           edges: visibleEdges.map((edge) => ({ source: edge.source().id(), target: edge.target().id() })),
@@ -688,10 +1076,17 @@ function WikiGraph({ detail, onSelectPath }: { detail: KnowledgeProjectDetailPay
         const title = String(target.data("title") ?? "");
         const path = resolveGraphPagePath(reference, title, detail.pages);
         setContextMenu(null);
-        if (path) onSelectPath(path);
+        instance.elements().removeClass("graph-dimmed graph-highlighted");
+        target.closedNeighborhood().addClass("graph-highlighted");
+        target.connectedEdges().addClass("graph-highlighted");
+        onSelectNode(reference, title);
+        if (path) onOpenPath(path);
       });
       instance.on("tap", (event) => {
-        if (event.target === instance) setContextMenu(null);
+        if (event.target === instance) {
+          setContextMenu(null);
+          onClearSelection();
+        }
       });
       instance.on("cxttap", "node", (event) => {
         const target = event.target;
@@ -708,11 +1103,13 @@ function WikiGraph({ detail, onSelectPath }: { detail: KnowledgeProjectDetailPay
       });
       instance.on("mouseover", "node", (event) => {
         const target = event.target;
+        setHoveredNodeId(target.id());
         instance.elements().addClass("graph-dimmed");
         target.closedNeighborhood().removeClass("graph-dimmed").addClass("graph-highlighted");
         target.connectedEdges().removeClass("graph-dimmed").addClass("graph-highlighted");
       });
       instance.on("mouseout", "node", () => {
+        setHoveredNodeId(null);
         instance.elements().removeClass("graph-dimmed graph-highlighted");
       });
       instance.on("mouseover", "edge", (event) => {
@@ -737,7 +1134,7 @@ function WikiGraph({ detail, onSelectPath }: { detail: KnowledgeProjectDetailPay
       graphRef.current = null;
       instance.destroy();
     };
-  }, [detail.pages, graph, onSelectPath]);
+  }, [detail.pages, graph, graphNodeTags, onClearSelection, onOpenPath, onSelectNode]);
 
   useEffect(() => {
     if (graphRef.current) runGraphLayout(graphRef.current, settings);
@@ -746,19 +1143,81 @@ function WikiGraph({ detail, onSelectPath }: { detail: KnowledgeProjectDetailPay
   useEffect(() => {
     const instance = graphRef.current;
     if (!instance) return;
-      instance.nodes().forEach((node) => {
-        const muted = activeCommunity !== null && String(node.data("type") ?? "entity") !== activeCommunity;
-        node.toggleClass("graph-community-muted", muted);
-      });
-      instance.edges().forEach((edge) => {
-      let allNodesMuted = true;
-      edge.connectedNodes().forEach((node) => {
-        if (!node.hasClass("graph-community-muted")) allNodesMuted = false;
-      });
-      const muted = activeCommunity !== null && allNodesMuted;
-      edge.toggleClass("graph-community-muted", muted);
+    instance.nodes().toggleClass("graph-selected", false);
+    if (selectedNodeId) instance.getElementById(selectedNodeId).toggleClass("graph-selected", true);
+    instance.nodes().forEach((node) => {
+      const type = String(node.data("type") ?? "entity");
+      const tags = Array.isArray(node.data("tags")) ? node.data("tags") as string[] : [];
+      const firstTag = tags[0] ?? "";
+      const color = colorMode === "community"
+        ? String(node.data("communityColor") ?? GRAPH_COMMUNITY_META[type]?.color ?? "hsl(var(--primary))")
+        : colorMode === "type"
+          ? GRAPH_COMMUNITY_META[type]?.color ?? "#94a3b8"
+          : firstTag ? graphTagColor(firstTag) : "#94a3b8";
+      node.data("color", color);
     });
-  }, [activeCommunity]);
+    miniMapSyncRef.current?.();
+  }, [colorMode, graph, selectedNodeId]);
+
+  useEffect(() => {
+    const instance = graphRef.current;
+    if (!instance) return;
+    const matches = (node: cytoscape.NodeSingular) => {
+      if (!highlightSelection) return true;
+      const key = highlightSelection.key;
+      if (highlightSelection.mode === "community") {
+        return String(node.data("communityId") ?? "entity") === key;
+      }
+      if (highlightSelection.mode === "type") {
+        return String(node.data("type") ?? "entity") === key;
+      }
+      const tags = Array.isArray(node.data("tags")) ? node.data("tags") as string[] : [];
+      return tags.includes(key);
+    };
+    instance.nodes().forEach((node) => {
+      node.toggleClass("graph-filter-muted", !matches(node));
+    });
+    instance.edges().forEach((edge) => {
+      const connected = edge.connectedNodes();
+      edge.toggleClass(
+        "graph-filter-muted",
+        connected.length === 2 && (!matches(connected[0]) || !matches(connected[1])),
+      );
+    });
+  }, [graph, highlightSelection]);
+
+  useEffect(() => {
+    const instance = graphRef.current;
+    if (!instance) return;
+    instance.nodes().forEach((node) => {
+      const visibleByFilter = !node.hasClass("graph-filter-muted");
+      const important = Boolean(node.data("important"));
+      const show = labelMode === "all"
+        || node.id() === selectedNodeId
+        || node.id() === hoveredNodeId
+        || important
+        || (Boolean(highlightSelection) && visibleByFilter);
+      node.toggleClass("graph-label-visible", show);
+    });
+  }, [graph, highlightSelection, hoveredNodeId, labelMode, selectedNodeId]);
+
+  useEffect(() => {
+    const instance = graphRef.current;
+    if (!instance || !selectedNodeId) return;
+    focusGraphNode(instance, selectedNodeId);
+  }, [selectedNodeId]);
+
+  useEffect(() => {
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key !== "Escape") return;
+      setHighlightSelection(null);
+      setGraphScope({ mode: "all" });
+      setHoveredNodeId(null);
+      onClearSelection();
+    };
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [onClearSelection]);
 
   useEffect(() => {
     if (graphRef.current) {
@@ -771,6 +1230,11 @@ function WikiGraph({ detail, onSelectPath }: { detail: KnowledgeProjectDetailPay
     setSettings((current) => ({ ...current, [key]: value }));
   };
 
+  const selectColorMode = (mode: GraphHighlightMode) => {
+    setColorMode(mode);
+    setHighlightSelection(null);
+  };
+
   const focusNode = () => {
     const instance = graphRef.current;
     const needle = nodeQuery.trim().toLocaleLowerCase();
@@ -781,15 +1245,38 @@ function WikiGraph({ detail, onSelectPath }: { detail: KnowledgeProjectDetailPay
       return label.includes(needle) || title.includes(needle) || String(node.id()).toLocaleLowerCase().includes(needle);
     }).first();
     if (match.empty()) return;
+    const title = String(match.data("title") ?? match.id());
+    onSelectNode(match.id(), title);
+    const path = resolveGraphPagePath(match.id(), title, detail.pages);
+    if (path) onOpenPath(path);
     focusGraphNode(instance, match.id());
+  };
+
+  const changeZoom = (factor: number) => {
+    const instance = graphRef.current;
+    if (!instance) return;
+    const next = Math.min(instance.maxZoom(), Math.max(instance.minZoom(), instance.zoom() * factor));
+    const container = instance.container();
+    instance.zoom({ level: next, renderedPosition: { x: (container?.clientWidth ?? 0) / 2, y: (container?.clientHeight ?? 0) / 2 } });
+  };
+  const fitGraph = () => {
+    graphRef.current?.fit(graphRef.current.elements(), 56);
+  };
+  const toggleFullscreen = () => {
+    const container = containerRef.current;
+    if (!container) return;
+    if (document.fullscreenElement) void document.exitFullscreen();
+    else void container.requestFullscreen?.();
   };
 
   return (
     <section className="flex h-full min-h-0 flex-col" aria-label="Knowledge graph">
-      <div className="flex min-h-12 shrink-0 items-center gap-2 border-b border-border/55 px-4">
-        <SlidersHorizontal className="h-4 w-4 text-primary/80" aria-hidden />
-        <span className="text-sm font-semibold">Layout controls</span>
-        <span className="text-[11px] text-muted-foreground">Node size follows connection degree</span>
+      <div className="flex min-h-12 shrink-0 items-center gap-2 border-b border-border/55 bg-card/55 px-4">
+        <GitBranch className="h-4 w-4 shrink-0 text-primary/80" aria-hidden />
+        <div className="min-w-0">
+          <span className="block truncate text-sm font-semibold">Knowledge graph</span>
+          <span className="hidden text-[10px] text-muted-foreground sm:block">{graph?.nodes.length ?? 0} nodes · {normalizedRelationCount} relations</span>
+        </div>
         <div className="ml-auto flex items-center gap-1">
           <label className="hidden min-w-0 items-center gap-1.5 rounded-md border border-border/60 bg-background px-2 text-muted-foreground sm:flex">
             <Search className="h-3.5 w-3.5 shrink-0" aria-hidden />
@@ -797,9 +1284,15 @@ function WikiGraph({ detail, onSelectPath }: { detail: KnowledgeProjectDetailPay
             <Input value={nodeQuery} onChange={(event) => setNodeQuery(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter") focusNode(); }} placeholder="Search nodes" className="h-7 w-[130px] border-0 bg-transparent px-0 text-[11px] shadow-none focus-visible:ring-0" aria-label="Search graph nodes" />
           </label>
           <Button type="button" variant="ghost" size="sm" className="h-8 gap-1.5 px-2 text-xs sm:hidden" onClick={focusNode} aria-label="Focus graph search"><Search className="h-3.5 w-3.5" aria-hidden /></Button>
-          <Button type="button" variant="ghost" size="sm" className="hidden h-8 gap-1.5 px-2 text-xs md:flex" onClick={() => setShowMiniMap((current) => !current)} aria-pressed={showMiniMap} aria-label="Toggle graph minimap"><PanelRightOpen className="h-3.5 w-3.5" aria-hidden />Mini map</Button>
-          <Button type="button" variant="ghost" size="sm" className="h-8 gap-1.5 px-2 text-xs" onClick={() => setShowControls((current) => !current)} aria-expanded={showControls} aria-controls="wiki-graph-controls">{showControls ? "Hide controls" : "Tune layout"}</Button>
+          <Button type="button" variant="ghost" size="icon" className="h-8 w-8" onClick={() => changeZoom(1.2)} aria-label="Zoom in" title="Zoom in"><ZoomIn className="h-3.5 w-3.5" aria-hidden /></Button>
+          <Button type="button" variant="ghost" size="icon" className="h-8 w-8" onClick={() => changeZoom(0.84)} aria-label="Zoom out" title="Zoom out"><ZoomOut className="h-3.5 w-3.5" aria-hidden /></Button>
+          <Button type="button" variant="ghost" size="icon" className="h-8 w-8" onClick={fitGraph} aria-label="Fit graph" title="Fit graph"><LocateFixed className="h-3.5 w-3.5" aria-hidden /></Button>
+          <Button type="button" variant="ghost" size="sm" className="hidden h-8 gap-1.5 px-2 text-xs md:flex" onClick={() => setShowMiniMap((current) => !current)} aria-pressed={showMiniMap} aria-label="Toggle graph minimap" title="Toggle graph minimap"><PanelRightOpen className="h-3.5 w-3.5" aria-hidden />Mini map</Button>
+          <Button type="button" variant="ghost" size="sm" className="hidden h-8 gap-1.5 px-2 text-xs lg:flex" onClick={() => setShowControls((current) => !current)} aria-expanded={showControls} aria-controls="wiki-graph-controls" title="Tune layout"><SlidersHorizontal className="h-3.5 w-3.5" aria-hidden />{showControls ? "Hide" : "Tune"}</Button>
+          <Button type="button" variant="ghost" size="sm" className="hidden h-8 gap-1.5 px-2 text-xs lg:flex" onClick={() => setLabelMode((mode) => mode === "smart" ? "all" : "smart")} aria-pressed={labelMode === "all"} aria-label="Toggle graph labels" title="Toggle graph labels">Labels: {labelMode === "all" ? "All" : "Smart"}</Button>
           <Button type="button" variant="ghost" size="icon" className="h-8 w-8" onClick={() => setSettings(DEFAULT_GRAPH_LAYOUT)} aria-label="Reset graph layout" title="Reset graph layout"><RotateCcw className="h-3.5 w-3.5" aria-hidden /></Button>
+          <Button type="button" variant="ghost" size="icon" className="hidden h-8 w-8 md:inline-flex" onClick={toggleFullscreen} aria-label="Toggle graph fullscreen" title="Toggle graph fullscreen"><Maximize2 className="h-3.5 w-3.5" aria-hidden /></Button>
+          <Button type="button" variant="ghost" size="icon" className="h-8 w-8" onClick={onToggleDetailPanel} aria-pressed={isDetailPanelCollapsed} aria-label={isDetailPanelCollapsed ? "Expand document details" : "Collapse document details"} title={isDetailPanelCollapsed ? "Expand document details" : "Collapse document details"}><PanelRightOpen className="h-3.5 w-3.5" aria-hidden /></Button>
         </div>
       </div>
       {showControls ? <div id="wiki-graph-controls" className="grid shrink-0 grid-cols-1 gap-3 border-b border-border/55 bg-muted/15 px-4 py-3 sm:grid-cols-2 xl:grid-cols-4">
@@ -808,23 +1301,20 @@ function WikiGraph({ detail, onSelectPath }: { detail: KnowledgeProjectDetailPay
         <GraphControl label="链接力 / Link force" value={settings.linkForce} min={0.1} max={1} step={0.05} displayValue={settings.linkForce.toFixed(2)} onChange={(value) => updateSetting("linkForce", value)} description="边把相连节点拉近的强度" />
         <GraphControl label="连接距离 / Link distance" value={settings.linkDistance} min={30} max={240} step={10} displayValue={`${settings.linkDistance}px`} onChange={(value) => updateSetting("linkDistance", value)} description="相连节点的理想间距" />
       </div> : null}
-      <div className="flex h-12 shrink-0 items-center gap-2 border-b border-border/55 px-4"><GitBranch className="h-4 w-4 text-primary/80" aria-hidden /><span className="text-sm font-semibold">Knowledge graph</span><span className="text-[11px] text-muted-foreground">{graph?.nodes.length ?? 0} nodes · {normalizedRelationCount} undirected relations</span></div>
-      <div className="flex min-h-10 shrink-0 items-center gap-1.5 overflow-x-auto border-b border-border/55 px-4 py-1.5" aria-label="Graph communities">
-        <span className="mr-1 shrink-0 text-[10px] text-muted-foreground">社区</span>
-        <button type="button" aria-pressed={activeCommunity === null} onClick={() => setActiveCommunity(null)} className={cn("shrink-0 rounded-full border px-2 py-1 text-[10px] transition-colors", activeCommunity === null ? "border-primary/30 bg-primary/10 text-foreground" : "border-border/60 text-muted-foreground hover:text-foreground")}>全部</button>
-        {communities.map((community) => (
-          <button key={community.key} type="button" aria-pressed={activeCommunity === community.key} onClick={() => setActiveCommunity((current) => current === community.key ? null : community.key)} className={cn("flex shrink-0 items-center gap-1 rounded-full border px-2 py-1 text-[10px] transition-colors", activeCommunity === community.key ? "border-primary/30 bg-primary/10 text-foreground" : "border-border/60 text-muted-foreground hover:text-foreground")}>
-            <span className="h-1.5 w-1.5 rounded-full" style={{ backgroundColor: community.color }} aria-hidden />
-            {community.label} {community.count}
-          </button>
-        ))}
-        {hoveredRelation ? <span className="ml-auto shrink-0 rounded-md bg-accent/60 px-2 py-1 text-[10px] text-foreground">关系：{hoveredRelation}</span> : null}
-      </div>
       <div ref={containerRef} className="relative min-h-0 flex-1 bg-background" data-knowledge-graph-canvas>
         {!graph || graph.nodes.length === 0 ? <span className="flex h-full items-center justify-center text-sm text-muted-foreground">No graph data</span> : null}
         {failed ? <span className="flex h-full items-center justify-center px-4 text-center text-sm text-muted-foreground">Graph preview unavailable</span> : null}
+        <GraphHighlightPanel
+          colorMode={colorMode}
+          entries={legendEntries}
+          totalNodes={graph?.nodes.length ?? 0}
+          selection={highlightSelection}
+          hoveredRelation={hoveredRelation}
+          onColorModeChange={selectColorMode}
+          onSelectionChange={setHighlightSelection}
+        />
         {showMiniMap && miniMap.nodes.length > 0 ? <GraphMiniMap miniMap={miniMap} /> : null}
-        {contextMenu ? <GraphContextMenu contextMenu={contextMenu} pages={detail.pages} graphRef={graphRef} onOpenFile={onSelectPath} onClose={() => setContextMenu(null)} onScopeChange={setGraphScope} /> : null}
+        {contextMenu ? <GraphContextMenu contextMenu={contextMenu} pages={detail.pages} graphRef={graphRef} onOpenFile={onOpenPath} onClose={() => setContextMenu(null)} onScopeChange={setGraphScope} /> : null}
       </div>
     </section>
   );
@@ -866,6 +1356,92 @@ function GraphContextMenu({ contextMenu, pages, graphRef, onOpenFile, onClose, o
   );
 }
 
+function KnowledgeReviewPanel({
+  detail,
+  onSelectPath,
+}: {
+  detail: KnowledgeProjectDetailPayload;
+  onSelectPath: (path: string) => void;
+}) {
+  const reviews = detail.reviews ?? [];
+  const changesets = detail.changesets ?? [];
+  const latestReview = reviews[0];
+  const issues = latestReview?.issues ?? [];
+  const openIssues = issues.filter((issue) => issue.status === "open");
+  const resolveReference = (reference: string | undefined) => {
+    if (!reference) return null;
+    const match = detail.pages.find((page) => page.path === reference || page.slug === reference || page.path.includes(reference));
+    return match?.path ?? null;
+  };
+  return (
+    <section className="min-h-0 flex-1 overflow-y-auto bg-background p-4 sm:p-6" aria-label="Knowledge review">
+      <div className="mx-auto max-w-5xl space-y-4">
+        <div className="flex flex-wrap items-start justify-between gap-3 rounded-xl border border-border/70 bg-card p-4 shadow-sm">
+          <div>
+            <p className="text-xs font-semibold uppercase tracking-[0.14em] text-muted-foreground">Knowledge Review</p>
+            <h2 className="mt-1 text-lg font-semibold text-foreground">{detail.project.title}</h2>
+            <p className="mt-1 text-xs text-muted-foreground">审查结果只描述 candidate 状态；正式 Wiki 需要通过 ChangeSet 批准后才会应用。</p>
+          </div>
+          <div className="grid grid-cols-3 gap-2 text-center text-xs">
+            <ReviewMetric label="Open" value={openIssues.length} tone={openIssues.length ? "warning" : "success"} />
+            <ReviewMetric label="Reviews" value={reviews.length} />
+            <ReviewMetric label="ChangeSets" value={changesets.length} />
+          </div>
+        </div>
+        {changesets.length > 0 ? (
+          <div className="rounded-xl border border-border/70 bg-card p-4">
+            <h3 className="text-sm font-semibold">ChangeSets</h3>
+            <div className="mt-3 space-y-2">
+              {changesets.map((changeset) => (
+                <div key={changeset.id} className="flex flex-wrap items-center gap-2 rounded-lg border border-border/60 bg-background px-3 py-2 text-xs">
+                  <span className="font-mono text-[10px] text-muted-foreground">{changeset.id.slice(0, 22)}</span>
+                  <span className={cn("rounded-full px-2 py-0.5", changeset.status === "applied" ? "bg-emerald-500/12 text-emerald-600" : changeset.status === "rejected" ? "bg-rose-500/12 text-rose-600" : "bg-amber-500/12 text-amber-600")}>{changeset.status}</span>
+                  <span className="min-w-0 flex-1 truncate text-muted-foreground">{changeset.reason || "Knowledge candidate"}</span>
+                  {changeset.feedback ? <span className="max-w-sm truncate text-muted-foreground" title={changeset.feedback}>反馈：{changeset.feedback}</span> : null}
+                </div>
+              ))}
+            </div>
+          </div>
+        ) : null}
+        <div className="rounded-xl border border-border/70 bg-card p-4">
+          <div className="flex items-center justify-between gap-2">
+            <h3 className="text-sm font-semibold">Review issues</h3>
+            <span className="text-[11px] text-muted-foreground">{latestReview ? latestReview.status : "尚无审查记录"}</span>
+          </div>
+          {issues.length === 0 ? <p className="mt-3 text-xs text-muted-foreground">当前没有结构化审查问题。</p> : (
+            <div className="mt-3 space-y-2">
+              {issues.map((issue) => {
+                const target = resolveReference(issue.page_refs?.[0] ?? issue.source_refs?.[0]);
+                return (
+                  <div key={issue.id} className="rounded-lg border border-border/60 bg-background p-3">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <span className="rounded-full bg-muted px-2 py-0.5 text-[10px] font-medium">{issue.kind}</span>
+                      <span className="text-[10px] text-muted-foreground">{issue.severity}</span>
+                      <span className="text-[10px] text-muted-foreground">{issue.status}</span>
+                    </div>
+                    <p className="mt-2 text-xs font-medium text-foreground">{issue.title || issue.kind}</p>
+                    {issue.summary ? <p className="mt-1 text-xs leading-5 text-muted-foreground">{issue.summary}</p> : null}
+                    {target ? <button type="button" className="mt-2 text-[11px] text-primary underline-offset-2 hover:underline" onClick={() => onSelectPath(target)}>打开相关页面</button> : null}
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
+      </div>
+    </section>
+  );
+}
+
+function ReviewMetric({ label, value, tone }: { label: string; value: number; tone?: "warning" | "success" }) {
+  return (
+    <div className="min-w-16 rounded-lg border border-border/60 bg-background px-2 py-1.5">
+      <div className={cn("text-sm font-semibold", tone === "warning" && "text-amber-600", tone === "success" && "text-emerald-600")}>{value}</div>
+      <div className="text-[10px] text-muted-foreground">{label}</div>
+    </div>
+  );
+}
+
 function TreeEntry({ node, selectedPath, onSelectPath, depth = 0 }: { node: WorkspaceTreeNode; selectedPath: string | null; onSelectPath: (path: string) => void; depth?: number }) {
   const [open, setOpen] = useState(depth < 1);
   const directory = node.kind === "directory";
@@ -884,18 +1460,6 @@ function TreeEntry({ node, selectedPath, onSelectPath, depth = 0 }: { node: Work
       </div>
       {directory && open && node.children?.map((child) => <TreeEntry key={child.path} node={child} selectedPath={selectedPath} onSelectPath={onSelectPath} depth={depth + 1} />)}
     </div>
-  );
-}
-
-function GraphSelectionHint() {
-  return (
-    <section className="flex min-h-[260px] min-w-0 flex-1 items-center justify-center border-t border-border/55 xl:border-t-0" aria-label="Graph file selection">
-      <div className="max-w-xs px-6 text-center text-muted-foreground">
-        <PanelRightOpen className="mx-auto h-8 w-8 opacity-35" aria-hidden />
-        <p className="mt-3 text-sm font-medium text-foreground">Select a node to open its file</p>
-        <p className="mt-1 text-xs leading-5">Click a node in the graph to keep the graph visible and open the linked Wiki file here.</p>
-      </div>
-    </section>
   );
 }
 

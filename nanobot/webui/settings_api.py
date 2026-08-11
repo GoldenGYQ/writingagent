@@ -914,6 +914,34 @@ def _parse_positive_int(value: str | None, field: str) -> int | None:
     return parsed
 
 
+def _parse_enum(value: str | None, field: str, allowed: set[str]) -> str | None:
+    if value is None:
+        return None
+    normalized = value.strip().lower()
+    if normalized not in allowed:
+        choices = ", ".join(sorted(allowed))
+        raise WebUISettingsError(f"{field} must be one of: {choices}")
+    return normalized
+
+
+def _parse_bounded_int(
+    value: str | None,
+    field: str,
+    *,
+    minimum: int,
+    maximum: int,
+) -> int | None:
+    if value is None:
+        return None
+    try:
+        parsed = int(value)
+    except ValueError:
+        raise WebUISettingsError(f"{field} must be an integer") from None
+    if parsed < minimum or parsed > maximum:
+        raise WebUISettingsError(f"{field} must be between {minimum} and {maximum}")
+    return parsed
+
+
 def _parse_temperature(value: str | None) -> float | None:
     if value is None:
         return None
@@ -1238,6 +1266,17 @@ def settings_payload(
             "bot_icon": defaults.bot_icon,
             "tool_hint_max_length": defaults.tool_hint_max_length,
         },
+        "knowledge_retrieval": {
+            "parameter_mode": defaults.knowledge_retrieval.parameter_mode,
+            "mode": defaults.knowledge_retrieval.mode,
+            "query_rewrite": defaults.knowledge_retrieval.query_rewrite,
+            "max_queries": defaults.knowledge_retrieval.max_queries,
+            "min_documents": defaults.knowledge_retrieval.min_documents,
+            "top_k": defaults.knowledge_retrieval.top_k,
+            "expand_hops": defaults.knowledge_retrieval.expand_hops,
+            "embedding_backend": defaults.knowledge_retrieval.embedding_backend,
+            "embedding_model": defaults.knowledge_retrieval.embedding_model,
+        },
         "model_presets": model_presets,
         "model_call_order": model_call_order,
         "model_call_order_editable": model_call_order_editable,
@@ -1440,6 +1479,82 @@ def update_agent_settings(query: QueryParams) -> dict[str, Any]:
             defaults.tool_hint_max_length = parsed
             changed = True
             restart_required = True
+
+    retrieval = defaults.knowledge_retrieval
+    parameter_mode = _parse_enum(
+        _query_first_alias(
+            query,
+            "knowledge_retrieval_parameter_mode",
+            "knowledgeRetrievalParameterMode",
+        ),
+        "knowledge_retrieval_parameter_mode",
+        {"auto", "manual"},
+    )
+    retrieval_mode = _parse_enum(
+        _query_first_alias(query, "knowledge_retrieval_mode", "knowledgeRetrievalMode"),
+        "knowledge_retrieval_mode",
+        {"hybrid", "vector", "graph"},
+    )
+    query_rewrite = _parse_enum(
+        _query_first_alias(
+            query,
+            "knowledge_retrieval_query_rewrite",
+            "knowledgeRetrievalQueryRewrite",
+        ),
+        "knowledge_retrieval_query_rewrite",
+        {"auto", "manual", "off"},
+    )
+    max_queries = _parse_bounded_int(
+        _query_first_alias(query, "knowledge_retrieval_max_queries", "knowledgeRetrievalMaxQueries"),
+        "knowledge_retrieval_max_queries",
+        minimum=1,
+        maximum=4,
+    )
+    min_documents = _parse_bounded_int(
+        _query_first_alias(
+            query,
+            "knowledge_retrieval_min_documents",
+            "knowledgeRetrievalMinDocuments",
+        ),
+        "knowledge_retrieval_min_documents",
+        minimum=1,
+        maximum=8,
+    )
+    top_k = _parse_bounded_int(
+        _query_first_alias(query, "knowledge_retrieval_top_k", "knowledgeRetrievalTopK"),
+        "knowledge_retrieval_top_k",
+        minimum=1,
+        maximum=20,
+    )
+    expand_hops = _parse_bounded_int(
+        _query_first_alias(query, "knowledge_retrieval_expand_hops", "knowledgeRetrievalExpandHops"),
+        "knowledge_retrieval_expand_hops",
+        minimum=0,
+        maximum=2,
+    )
+    embedding_backend = _parse_enum(
+        _query_first_alias(
+            query,
+            "knowledge_retrieval_embedding_backend",
+            "knowledgeRetrievalEmbeddingBackend",
+        ),
+        "knowledge_retrieval_embedding_backend",
+        {"feature_hash", "fastembed"},
+    )
+    retrieval_updates = {
+        "parameter_mode": parameter_mode,
+        "mode": retrieval_mode,
+        "query_rewrite": query_rewrite,
+        "max_queries": max_queries,
+        "min_documents": min_documents,
+        "top_k": top_k,
+        "expand_hops": expand_hops,
+        "embedding_backend": embedding_backend,
+    }
+    for field, value in retrieval_updates.items():
+        if value is not None and getattr(retrieval, field) != value:
+            setattr(retrieval, field, value)
+            changed = True
 
     if changed:
         save_config(config)

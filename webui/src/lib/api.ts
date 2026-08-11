@@ -10,6 +10,7 @@ import type {
   FilePreviewPayload,
   KnowledgeProjectsPayload,
   KnowledgeProjectDetailPayload,
+  KnowledgeSearchPayload,
   WorkspaceTreePayload,
   ImageGenerationSettingsUpdate,
   McpPresetsPayload,
@@ -292,6 +293,26 @@ export async function fetchKnowledgeProject(
 ): Promise<KnowledgeProjectDetailPayload> {
   return request<KnowledgeProjectDetailPayload>(
     `${base}/api/sessions/${encodeURIComponent(key)}/knowledge-projects/${encodeURIComponent(projectId)}`,
+    token,
+    undefined,
+    API_READ_TIMEOUT_MS,
+  );
+}
+
+export async function fetchKnowledgeSearch(
+  token: string,
+  key: string,
+  projectId: string,
+  query: string,
+  options: { mode?: "vector" | "graph" | "hybrid"; limit?: number; expandHops?: number } = {},
+  base: string = "",
+): Promise<KnowledgeSearchPayload> {
+  const params = new URLSearchParams({ q: query });
+  if (options.mode) params.set("mode", options.mode);
+  if (options.limit !== undefined) params.set("limit", String(options.limit));
+  if (options.expandHops !== undefined) params.set("expand_hops", String(options.expandHops));
+  return request<KnowledgeSearchPayload>(
+    `${base}/api/sessions/${encodeURIComponent(key)}/knowledge-projects/${encodeURIComponent(projectId)}/search?${params.toString()}`,
     token,
     undefined,
     API_READ_TIMEOUT_MS,
@@ -925,6 +946,30 @@ export async function updateSettings(
   if (update.botIcon !== undefined) query.set("bot_icon", update.botIcon);
   if (update.toolHintMaxLength !== undefined) {
     query.set("tool_hint_max_length", String(update.toolHintMaxLength));
+  }
+  if (update.knowledgeRetrievalParameterMode !== undefined) {
+    query.set("knowledge_retrieval_parameter_mode", update.knowledgeRetrievalParameterMode);
+  }
+  if (update.knowledgeRetrievalMode !== undefined) {
+    query.set("knowledge_retrieval_mode", update.knowledgeRetrievalMode);
+  }
+  if (update.knowledgeRetrievalQueryRewrite !== undefined) {
+    query.set("knowledge_retrieval_query_rewrite", update.knowledgeRetrievalQueryRewrite);
+  }
+  if (update.knowledgeRetrievalMaxQueries !== undefined) {
+    query.set("knowledge_retrieval_max_queries", String(update.knowledgeRetrievalMaxQueries));
+  }
+  if (update.knowledgeRetrievalMinDocuments !== undefined) {
+    query.set("knowledge_retrieval_min_documents", String(update.knowledgeRetrievalMinDocuments));
+  }
+  if (update.knowledgeRetrievalTopK !== undefined) {
+    query.set("knowledge_retrieval_top_k", String(update.knowledgeRetrievalTopK));
+  }
+  if (update.knowledgeRetrievalExpandHops !== undefined) {
+    query.set("knowledge_retrieval_expand_hops", String(update.knowledgeRetrievalExpandHops));
+  }
+  if (update.knowledgeRetrievalEmbeddingBackend !== undefined) {
+    query.set("knowledge_retrieval_embedding_backend", update.knowledgeRetrievalEmbeddingBackend);
   }
   return request<SettingsPayload>(`${base}/api/settings/update?${query}`, token);
 }

@@ -376,6 +376,17 @@ async def test_knowledge_runtime_context_is_conditional_and_bounded(tmp_path):
     assert "[Working Plan Guidance]" not in block.content
     assert len(block.content) <= 4_000
 
+    session.metadata["workspace_scope"] = {
+        "project_path": str(tmp_path),
+        "access_mode": "restricted",
+        "execution_policy": "auto",
+    }
+    sessions.save(session)
+    auto_block = await provider(request)
+    assert auto_block is not None
+    assert "publish automatically" in auto_block.content
+    assert "wait for human approval before publish" not in auto_block.content
+
 
 @pytest.mark.asyncio
 async def test_knowledge_runtime_context_guides_source_selection(tmp_path):

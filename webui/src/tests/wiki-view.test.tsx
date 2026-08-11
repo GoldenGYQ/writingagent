@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -82,7 +82,13 @@ describe("WikiView", () => {
     await user.click(screen.getByRole("button", { name: "Graph", exact: true }));
     expect(screen.getByRole("button", { name: "Graph", exact: true })).toHaveAttribute("aria-pressed", "true");
     expect(screen.getByRole("region", { name: "Knowledge graph" })).toBeInTheDocument();
-    expect(screen.getByLabelText("Graph communities")).toBeInTheDocument();
+    const graphHighlights = screen.getByLabelText("Graph communities");
+    expect(graphHighlights).toBeInTheDocument();
+    expect(screen.getByRole("tab", { name: "社区" })).toHaveAttribute("aria-selected", "true");
+    await user.click(screen.getByRole("tab", { name: "节点类型" }));
+    expect(within(graphHighlights).getByRole("button", { name: /概念/ })).toBeInTheDocument();
+    await user.click(screen.getByRole("tab", { name: "标签" }));
+    expect(within(graphHighlights).getByRole("button", { name: /agent/ })).toBeInTheDocument();
     const minimapToggle = screen.getByRole("button", { name: "Toggle graph minimap" });
     expect(minimapToggle).toHaveAttribute("aria-pressed", "true");
     await user.click(minimapToggle);

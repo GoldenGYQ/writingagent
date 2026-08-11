@@ -77,6 +77,21 @@ documents = [
     "openpyxl>=3.1.0,<4.0.0",
     "python-pptx>=1.0.0,<2.0.0",
 ]
+knowledge = [
+    # Optional local semantic retrieval and OCR.  Core installations keep the
+    # deterministic lexical/feature-hash fallback and never download models.
+    "fastembed>=0.7.0,<1.0.0",
+    "rapidocr>=3.4.0,<4.0.0",
+    "onnxruntime>=1.20.0,<2.0.0",
+    "olefile>=0.47,<1.0.0",
+    "pillow>=11.0.0,<13.0.0",
+]
+knowledge-experiments = [
+    # Optional comparison harness. These are intentionally not runtime
+    # defaults: small personal Wikis are faster with the in-process flat index.
+    "faiss-cpu>=1.15.0,<2.0.0",
+    "chromadb>=1.5.0,<2.0.0",
+]
 langfuse = [
     "langfuse>=3.0.0,<4.0.0",
 ]

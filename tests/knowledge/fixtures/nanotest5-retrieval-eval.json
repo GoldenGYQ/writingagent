@@ -1,0 +1,20 @@
+{
+  "queries": [
+    {
+      "query": "企业资质与特种设备生产许可",
+      "relevant_paths": ["concepts/enterprise-qualifications-and-licenses.md"]
+    },
+    {
+      "query": "投标响应与履约承诺",
+      "relevant_paths": ["concepts/bid-response-and-performance-commitment.md"]
+    },
+    {
+      "query": "冰山冷热科技股份有限公司基本情况",
+      "relevant_paths": ["entities/bingshan-refrigeration-and-heat-transfer.md"]
+    },
+    {
+      "query": "塔里木丙烷制冷机组招标来源",
+      "relevant_paths": ["sources/tarim-propane-refrigeration-skid-bid.md"]
+    }
+  ]
+}

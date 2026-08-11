@@ -56,4 +56,23 @@ describe("InteractionRequestCard", () => {
     });
     expect(confirm).toBeEnabled();
   });
+
+  it("explains the durable review boundary for a knowledge candidate", () => {
+    render(
+      <InteractionRequestCard
+        request={{
+          ...request,
+          id: "interaction-evidence",
+          fields: [],
+          allow_message_response: true,
+          accepts_attachments: true,
+          response_scope: "knowledge_candidate",
+        }}
+        onRespond={vi.fn()}
+      />,
+    );
+
+    expect(screen.getByText(/作为知识候选项/)).toBeInTheDocument();
+    expect(screen.getByText(/审查通过后/)).toBeInTheDocument();
+  });
 });

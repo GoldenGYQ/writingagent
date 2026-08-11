@@ -7,12 +7,18 @@ from typing import Any, cast
 
 from nanobot.knowledge.store import KnowledgeNotFoundError, KnowledgeStore
 from nanobot.runtime_context import RuntimeContextBlock, wrap_runtime_context_lines
+from nanobot.security.workspace_access import (
+    WORKSPACE_SCOPE_METADATA_KEY,
+    resolve_effective_workspace_scope,
+)
 
 KNOWLEDGE_CONTEXT_KEY = "knowledge_context"
 KNOWLEDGE_REQUESTED_METADATA = "knowledge_requested"
 KNOWLEDGE_PROJECT_ID_METADATA = "knowledge_project_id"
 KNOWLEDGE_SOURCE_PENDING = "__select_source__"
 KNOWLEDGE_CITATIONS_KEY = "knowledge_citations"
+KNOWLEDGE_CHANGESET_ID_KEY = "knowledge_changeset_id"
+KNOWLEDGE_RETRIEVAL_KEY = "knowledge_retrieval"
 MAX_KNOWLEDGE_CONTEXT_CHARS = 4_000
 MAX_KNOWLEDGE_CITATIONS = 12
 MAX_KNOWLEDGE_QUOTE_CHARS = 1_200
@@ -24,7 +30,7 @@ def knowledge_context_raw(metadata: Mapping[str, Any] | None) -> dict[str, str]:
         return {}
     value = cast(Mapping[str, Any], raw)
     result: dict[str, str] = {}
-    for key in ("task_id", "project_id", "source_root", "phase", "selected_project_id"):
+    for key in ("task_id", "project_id", "source_root", "phase", "selected_project_id", "changeset_id"):
         candidate = value.get(key)
         if isinstance(candidate, str) and candidate.strip():
             result[key] = candidate.strip()
@@ -39,6 +45,7 @@ def set_knowledge_context(
     phase: str | None = None,
     selected_project_id: str | None = None,
     task_id: str | None = None,
+    changeset_id: str | None = None,
 ) -> dict[str, str]:
     current = knowledge_context_raw(metadata)
     values = {
@@ -47,6 +54,7 @@ def set_knowledge_context(
         "phase": phase,
         "selected_project_id": selected_project_id,
         "task_id": task_id,
+        "changeset_id": changeset_id,
     }
     for key, value in values.items():
         if value is not None:
@@ -69,7 +77,7 @@ def knowledge_citations_raw(metadata: Mapping[str, Any] | None) -> list[dict[str
     if not isinstance(raw, list):
         return []
     result: list[dict[str, Any]] = []
-    for raw_item in raw:
+    for raw_item in cast(list[Any], raw):
         if not isinstance(raw_item, Mapping):
             continue
         item = cast(Mapping[str, Any], raw_item)
@@ -110,8 +118,6 @@ def set_knowledge_citations(
     """Persist only normalized citations for the active knowledge project."""
     normalized: list[dict[str, Any]] = []
     for item in citations:
-        if not isinstance(item, Mapping):
-            continue
         candidate = dict(item)
         if project_id and not candidate.get("project_id"):
             candidate["project_id"] = project_id
@@ -122,8 +128,61 @@ def set_knowledge_citations(
     return normalized[:MAX_KNOWLEDGE_CITATIONS]
 
 
+def set_knowledge_retrieval(
+    metadata: dict[str, Any],
+    *,
+    query: str,
+    mode: str,
+    index_algorithm: str | None = None,
+    document_count: int = 0,
+    relation_count: int = 0,
+    seed_nodes: Sequence[str] = (),
+) -> dict[str, Any]:
+    """Persist only compact retrieval state; snippets stay in citations/results."""
+    value: dict[str, Any] = {
+        "query": query.strip()[:400],
+        "mode": mode.strip()[:20],
+        "document_count": max(0, int(document_count)),
+        "relation_count": max(0, int(relation_count)),
+        "seed_nodes": [str(item)[:160] for item in seed_nodes[:5] if str(item).strip()],
+    }
+    if isinstance(index_algorithm, str) and index_algorithm.strip():
+        value["index_algorithm"] = index_algorithm.strip()[:80]
+    metadata[KNOWLEDGE_RETRIEVAL_KEY] = value
+    return value
+
+
+def knowledge_retrieval_raw(metadata: Mapping[str, Any] | None) -> dict[str, Any]:
+    raw = metadata.get(KNOWLEDGE_RETRIEVAL_KEY) if metadata else None
+    if not isinstance(raw, Mapping):
+        return {}
+    value = cast(Mapping[str, Any], raw)
+    result: dict[str, Any] = {}
+    for key in ("query", "mode", "index_algorithm"):
+        candidate = value.get(key)
+        if isinstance(candidate, str) and candidate.strip():
+            result[key] = candidate.strip()[:400]
+    for key in ("document_count", "relation_count"):
+        candidate = value.get(key)
+        if isinstance(candidate, int) and not isinstance(candidate, bool):
+            result[key] = max(0, candidate)
+    seed_nodes = value.get("seed_nodes")
+    if isinstance(seed_nodes, list):
+        result["seed_nodes"] = [
+            str(item)[:160]
+            for item in cast(list[Any], seed_nodes)[:5]
+            if str(item).strip()
+        ]
+    return result
+
+
 def _request_selected_project(request: Any) -> str | None:
-    metadata = request.metadata if request is not None else {}
+    raw_metadata: object = getattr(request, "metadata", None) if request is not None else None
+    metadata: Mapping[str, Any] = (
+        cast(Mapping[str, Any], raw_metadata)
+        if isinstance(raw_metadata, Mapping)
+        else dict[str, Any]()
+    )
     value = metadata.get(KNOWLEDGE_PROJECT_ID_METADATA)
     return value.strip() if isinstance(value, str) and value.strip() else None
 
@@ -134,6 +193,8 @@ def knowledge_context_runtime_lines(
     *,
     requested_source: str | None = None,
     selected_project_id: str | None = None,
+    execution_policy: str | None = None,
+    retrieval: Mapping[str, Any] | None = None,
 ) -> list[str]:
     project_id = context.get("project_id") or selected_project_id
     if not project_id and not requested_source:
@@ -154,13 +215,28 @@ def knowledge_context_runtime_lines(
         lines.append(f"Current Knowledge Project: {project_id}")
         try:
             project = store.get_project(project_id)
+            if execution_policy == "auto":
+                next_step = (
+                    "Next: use knowledge_extract, compile a candidate, validate it, then publish automatically; "
+                    "do not ask the user for approval."
+                )
+            elif execution_policy == "read_only":
+                next_step = (
+                    "Next: use knowledge_extract, compile a candidate, validate it, then publishing is blocked "
+                    "by Read-only policy."
+                )
+            else:
+                next_step = (
+                    "Next: use knowledge_extract, compile a candidate, validate it, then wait for human approval "
+                    "before publish."
+                )
             lines.extend([
                 f"Project title: {project.title}",
                 f"Phase: {project.phase}",
                 f"Scanned sources: {len(project.sources)}",
                 f"IR files: {len(project.ir_files)}",
                 f"Published pages: {project.page_count}",
-                "Next: use knowledge_extract, knowledge_compile, knowledge_validate, then knowledge_publish.",
+                next_step,
             ])
             try:
                 task = store.get_task(project_id)
@@ -176,6 +252,15 @@ def knowledge_context_runtime_lines(
             lines.append("Project pointer is stale; call knowledge_scan to recover it.")
     if selected_project_id and selected_project_id != project_id:
         lines.append(f"Selected Knowledge Project for retrieval: {selected_project_id}")
+    if retrieval:
+        query = str(retrieval.get("query") or "")
+        mode = str(retrieval.get("mode") or "hybrid")
+        document_count = retrieval.get("document_count", 0)
+        relation_count = retrieval.get("relation_count", 0)
+        lines.append(
+            f"Last Knowledge retrieval: {mode} query={query[:160]!r}; "
+            f"documents={document_count}, relations={relation_count}."
+        )
     lines.append("Preserve source paths and evidence; do not directly edit published wiki Markdown during extraction.")
     lines.append("[/Knowledge Runtime]")
     return lines
@@ -192,7 +277,12 @@ class KnowledgeContextProvider:
             return None
         session = self.sessions.get_or_create(request.session_key)
         context = knowledge_context_raw(session.metadata)
-        metadata = request.metadata if isinstance(request.metadata, Mapping) else {}
+        raw_metadata: object = getattr(request, "metadata", None)
+        metadata: Mapping[str, Any] = (
+            cast(Mapping[str, Any], raw_metadata)
+            if isinstance(raw_metadata, Mapping)
+            else dict[str, Any]()
+        )
         requested_source = metadata.get(KNOWLEDGE_REQUESTED_METADATA)
         if not isinstance(requested_source, str):
             requested_source = session.metadata.get(KNOWLEDGE_REQUESTED_METADATA)
@@ -201,12 +291,27 @@ class KnowledgeContextProvider:
         if not context and not requested_source and not selected_project_id:
             return None
         store = KnowledgeStore(request.workspace or self.sessions.workspace)
+        execution_policy = None
+        if WORKSPACE_SCOPE_METADATA_KEY in metadata or WORKSPACE_SCOPE_METADATA_KEY in session.metadata:
+            try:
+                scope = resolve_effective_workspace_scope(
+                    message_metadata=metadata,
+                    session_metadata=session.metadata,
+                    default_workspace=request.workspace or self.sessions.workspace,
+                    default_restrict_to_workspace=False,
+                    source_channel=getattr(request, "channel", None),
+                )
+                execution_policy = scope.execution_policy
+            except Exception:
+                execution_policy = None
         content = wrap_runtime_context_lines(
             knowledge_context_runtime_lines(
                 store,
                 context,
                 requested_source=requested_source,
                 selected_project_id=selected_project_id,
+                execution_policy=execution_policy,
+                retrieval=knowledge_retrieval_raw(session.metadata),
             )
         )
         if not content:

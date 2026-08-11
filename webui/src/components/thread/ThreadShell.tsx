@@ -1487,7 +1487,7 @@ export function ThreadShell({
       {session ? (
         <ThreadComposer
           onSend={handleThreadSend}
-          disabled={!chatId || currentInteraction?.pending === true}
+          disabled={!chatId || (currentInteraction?.pending === true && !currentInteraction.allow_message_response)}
           isStreaming={turnActive}
           placeholder={
             showHeroComposer
@@ -1533,7 +1533,7 @@ export function ThreadShell({
       ) : (
         <ThreadComposer
           onSend={handleWelcomeSend}
-          disabled={booting || currentInteraction?.pending === true}
+          disabled={booting || (currentInteraction?.pending === true && !currentInteraction.allow_message_response)}
           isStreaming={turnActive}
           placeholder={
             booting

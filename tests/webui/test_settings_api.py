@@ -758,6 +758,76 @@ def test_update_agent_settings_accepts_context_window_options(
     assert saved.agents.defaults.context_window_tokens == 200000
 
 
+def test_settings_payload_exposes_knowledge_retrieval_profile(
+    tmp_path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    config_path = tmp_path / "config.json"
+    config = Config()
+    config.agents.defaults.knowledge_retrieval.parameter_mode = "manual"
+    config.agents.defaults.knowledge_retrieval.top_k = 12
+    save_config(config, config_path)
+    monkeypatch.setattr("nanobot.config.loader._current_config_path", config_path)
+
+    retrieval = settings_payload()["knowledge_retrieval"]
+
+    assert retrieval["parameter_mode"] == "manual"
+    assert retrieval["top_k"] == 12
+    assert retrieval["expand_hops"] == 1
+
+
+def test_update_agent_settings_persists_knowledge_retrieval_profile(
+    tmp_path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    config_path = tmp_path / "config.json"
+    save_config(Config(), config_path)
+    monkeypatch.setattr("nanobot.config.loader._current_config_path", config_path)
+
+    payload = update_agent_settings({
+        "knowledge_retrieval_parameter_mode": ["manual"],
+        "knowledge_retrieval_mode": ["vector"],
+        "knowledge_retrieval_query_rewrite": ["manual"],
+        "knowledge_retrieval_max_queries": ["4"],
+        "knowledge_retrieval_min_documents": ["5"],
+        "knowledge_retrieval_top_k": ["14"],
+        "knowledge_retrieval_expand_hops": ["2"],
+        "knowledge_retrieval_embedding_backend": ["fastembed"],
+    })
+
+    assert payload["knowledge_retrieval"] == {
+        "parameter_mode": "manual",
+        "mode": "vector",
+        "query_rewrite": "manual",
+        "max_queries": 4,
+        "min_documents": 5,
+        "top_k": 14,
+        "expand_hops": 2,
+        "embedding_backend": "fastembed",
+        "embedding_model": "BAAI/bge-small-zh-v1.5",
+    }
+    saved = load_config(config_path).agents.defaults.knowledge_retrieval
+    assert saved.parameter_mode == "manual"
+    assert saved.mode == "vector"
+    assert saved.query_rewrite == "manual"
+    assert saved.max_queries == 4
+    assert saved.min_documents == 5
+    assert saved.top_k == 14
+    assert saved.expand_hops == 2
+
+
+def test_update_agent_settings_rejects_invalid_knowledge_retrieval_bounds(
+    tmp_path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    config_path = tmp_path / "config.json"
+    save_config(Config(), config_path)
+    monkeypatch.setattr("nanobot.config.loader._current_config_path", config_path)
+
+    with pytest.raises(WebUISettingsError, match="between 0 and 2"):
+        update_agent_settings({"knowledge_retrieval_expand_hops": ["3"]})
+
+
 def test_update_model_configuration_preserves_custom_context_windows(
     tmp_path,
     monkeypatch: pytest.MonkeyPatch,

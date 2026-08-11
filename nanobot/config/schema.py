@@ -113,6 +113,20 @@ class ModelPresetConfig(Base):
         )
 
 
+class KnowledgeRetrievalConfig(Base):
+    """User-tunable defaults for the read-only Knowledge retrieval tools."""
+
+    parameter_mode: Literal["auto", "manual"] = "auto"
+    mode: Literal["hybrid", "vector", "graph"] = "hybrid"
+    query_rewrite: Literal["auto", "manual", "off"] = "auto"
+    max_queries: int = Field(default=3, ge=1, le=4)
+    min_documents: int = Field(default=3, ge=1, le=8)
+    top_k: int = Field(default=8, ge=1, le=20)
+    expand_hops: int = Field(default=1, ge=0, le=2)
+    embedding_backend: Literal["feature_hash", "fastembed"] = "feature_hash"
+    embedding_model: str = "BAAI/bge-small-zh-v1.5"
+
+
 class AgentDefaults(Base):
     """Default agent configuration."""
 
@@ -157,6 +171,7 @@ class AgentDefaults(Base):
     timezone: str = "UTC"  # IANA timezone, e.g. "Asia/Shanghai", "America/New_York"
     bot_name: str = "nanobot"  # Display name shown in CLI prompts (e.g. "{name} is thinking...")
     bot_icon: str = "🐈"  # Short icon (emoji or text) shown next to the bot name in CLI; "" to omit
+    knowledge_retrieval: KnowledgeRetrievalConfig = Field(default_factory=KnowledgeRetrievalConfig)
     unified_session: bool = False  # Share one session across all channels (single-user multi-device)
     disabled_skills: list[str] = Field(default_factory=list)  # Skill names to exclude from loading (e.g. ["summarize", "skill-creator"])
     session_ttl_minutes: int = Field(

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from copy import deepcopy
 from datetime import datetime
-from typing import Any, cast
+from typing import Any
 from uuid import uuid4
 
 from nanobot.agent.tools.base import Tool, ToolResult, tool_parameters
@@ -68,8 +68,32 @@ _ACTION_SCHEMA = ObjectSchema(
     title=StringSchema("Form title.", min_length=1, max_length=240),
     prompt=StringSchema("Why input is required and what happens next.", min_length=1, max_length=4000),
     reason=StringSchema("Machine-readable interaction reason.", min_length=1, max_length=100),
-    fields=ArraySchema(_FIELD_SCHEMA, description="One or more form fields.", min_items=1, max_items=12),
+    fields=ArraySchema(
+        _FIELD_SCHEMA,
+        description="Form fields; may be empty for a natural evidence/attachment response.",
+        min_items=0,
+        max_items=12,
+    ),
     actions=ArraySchema(_ACTION_SCHEMA, description="Form actions.", min_items=1, max_items=4),
+    allow_message_response=BooleanSchema(
+        description=(
+            "Allow the user to answer naturally through the composer, including file/image attachments. "
+            "Use for evidence or knowledge-gap requests; keep false for approvals."
+        ),
+        nullable=True,
+    ),
+    accepts_attachments=BooleanSchema(
+        description="Whether a natural response may contain document/image attachments.",
+        nullable=True,
+    ),
+    response_scope=StringSchema(
+        description=(
+            "Default destination for natural evidence: task keeps it in the current task; "
+            "knowledge_candidate routes it into Knowledge review before publication."
+        ),
+        enum=("task", "knowledge_candidate"),
+        nullable=True,
+    ),
     required=["title", "prompt", "reason", "fields", "actions"],
 ))
 class RequestUserInputTool(Tool):
@@ -111,13 +135,16 @@ class RequestUserInputTool(Tool):
     def exclusive(self) -> bool:
         return True
 
-    async def execute(
+    async def execute(  # pyright: ignore[reportIncompatibleMethodOverride]
         self,
         title: str,
         prompt: str,
         reason: str,
         fields: list[dict[str, Any]],
         actions: list[dict[str, Any]],
+        allow_message_response: bool | None = None,
+        accepts_attachments: bool | None = None,
+        response_scope: str | None = None,
         **_: Any,
     ) -> str:
         ctx = current_request_context()
@@ -139,8 +166,11 @@ class RequestUserInputTool(Tool):
             "reason": reason.strip(),
             "title": title.strip(),
             "prompt": prompt.strip(),
-            "fields": [dict(cast(dict[str, Any], field)) for field in fields],
-            "actions": [dict(cast(dict[str, Any], action)) for action in actions],
+            "fields": [dict(field) for field in fields],
+            "actions": [dict(action) for action in actions],
+            "allow_message_response": bool(allow_message_response),
+            "accepts_attachments": bool(accepts_attachments),
+            "response_scope": response_scope if response_scope in {"task", "knowledge_candidate"} else "task",
             "created_at": now,
             "plan_ref": (
                 {"id": plan.get("id"), "version": plan.get("version")}

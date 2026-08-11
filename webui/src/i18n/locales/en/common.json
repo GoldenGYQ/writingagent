@@ -1,9 +1,9 @@
 {
   "app": {
-    "brand": "nanobot",
+    "brand": "JLU Writing Agent",
     "loading": {
       "connecting": "Connecting to nanobot…",
-      "boot": "Loading nanobot…"
+      "boot": "Loading JLU Writing Agent…"
     },
     "error": {
       "title": "Couldn't reach nanobot",
@@ -33,11 +33,11 @@
       "completed": "Restart completed in {{seconds}}s."
     },
     "documentTitle": {
-      "base": "nanobot",
-      "chat": "{{title}} · nanobot"
+      "base": "JLU Writing Agent",
+      "chat": "{{title}} · JLU Writing Agent"
     },
     "meta": {
-      "description": "nanobot web UI — chat with your nanobot workspace."
+      "description": "JLU Writing Agent — an interactive workspace for writing, knowledge, and review."
     }
   },
   "sidebar": {

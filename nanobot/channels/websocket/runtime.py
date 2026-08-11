@@ -805,10 +805,11 @@ class WebSocketChannel(BaseChannel):
                 )
                 return
             manager = self.gateway.session_manager
+            waiting_interaction: dict[str, Any] | None = None
             if manager is not None:
                 session = manager.get_or_create(f"websocket:{cid}")
                 waiting = pending_interaction(session.metadata)
-                if waiting:
+                if waiting and not waiting.get("allow_message_response"):
                     await self._send_event(
                         connection,
                         "error",
@@ -817,6 +818,8 @@ class WebSocketChannel(BaseChannel):
                         interaction_id=waiting.get("id"),
                     )
                     return
+                if waiting:
+                    waiting_interaction = waiting
             message_rejection = self._ingress.validate_text(content)
             if message_rejection is not None:
                 await self._send_event(
@@ -860,6 +863,54 @@ class WebSocketChannel(BaseChannel):
                     **rejection_fields,
                 )
                 return
+            if waiting_interaction is not None and manager is not None:
+                session = manager.get_or_create(f"websocket:{cid}")
+                raw_actions = waiting_interaction.get("actions")
+                actions = [
+                    cast(dict[str, Any], item)
+                    for item in cast(list[Any], raw_actions)
+                    if isinstance(item, dict)
+                ] if isinstance(raw_actions, list) else []
+                action = next(
+                    (
+                        str(item.get("id"))
+                        for item in actions
+                        if item.get("style") == "primary" and item.get("id")
+                    ),
+                    next(
+                        (
+                            str(item.get("id"))
+                            for item in actions
+                            if item.get("id")
+                        ),
+                        "submit",
+                    ),
+                )
+                try:
+                    resolved = resolve_interaction(
+                        session.metadata,
+                        interaction_id=str(waiting_interaction.get("id") or ""),
+                        action=action,
+                        values={},
+                    )
+                    manager.save(session)
+                except ValueError as exc:
+                    await self._send_event(connection, "error", detail=str(exc), chat_id=cid)
+                    return
+                await self.send_interaction_state(cid, interaction_ws_blob(session.metadata))
+                await self.send_working_plan(cid, working_plan_ws_blob(session.metadata))
+                await self._send_event(
+                    connection,
+                    "interaction_accepted",
+                    chat_id=cid,
+                    interaction_id=str(waiting_interaction.get("id") or ""),
+                )
+                content = (
+                    "[Evidence response]\n"
+                    f"reason={resolved.get('reason', '')}\n"
+                    f"interaction_id={resolved.get('id', '')}\n"
+                    f"scope={resolved.get('response_scope') or 'task'}\n\n{content}"
+                ).strip()
             # Auto-attach on first use so clients can one-shot without a separate attach.
             self._attach(connection, cid)
             await self._hydrate_after_subscribe(cid)
@@ -892,6 +943,14 @@ class WebSocketChannel(BaseChannel):
                 return
 
             metadata: dict[str, Any] = {"remote": getattr(connection, "remote_address", None)}
+            if waiting_interaction is not None:
+                metadata.update({
+                    "interaction_response": True,
+                    "interaction_id": waiting_interaction.get("id"),
+                    "interaction_reason": waiting_interaction.get("reason"),
+                    "evidence_response": True,
+                    "evidence_scope": waiting_interaction.get("response_scope") or "task",
+                })
             if envelope.get("webui") is True:
                 metadata["webui"] = True
                 metadata.update(self._transcripts.client_turn_metadata(envelope.get("turn_id")))
@@ -1010,7 +1069,8 @@ class WebSocketChannel(BaseChannel):
         session = manager.get_or_create(session_key)
         scope = self._workspaces.scope_for_session_key(session_key)
         context = writing_context_raw(session.metadata)
-        reason = envelope.get("reason") if isinstance(envelope.get("reason"), str) else ""
+        raw_reason = envelope.get("reason")
+        reason = raw_reason if isinstance(raw_reason, str) else ""
         try:
             payload = propose_file_changeset(
                 WritingStore(scope.project_path),

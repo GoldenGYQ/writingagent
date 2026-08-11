@@ -6,6 +6,7 @@ import hashlib
 import json
 import os
 import re
+import shutil
 from datetime import datetime, timezone
 from pathlib import Path
 from tempfile import NamedTemporaryFile
@@ -13,6 +14,7 @@ from typing import Any, cast
 
 from nanobot.knowledge.ingest import adapter_for_path
 from nanobot.knowledge.models import (
+    KnowledgeChangeSet,
     KnowledgeIR,
     KnowledgePage,
     KnowledgeProject,
@@ -106,6 +108,18 @@ class KnowledgeStore:
     def _write_json(cls, path: Path, value: dict[str, Any]) -> None:
         cls._write_text(path, json.dumps(value, ensure_ascii=False, indent=2) + "\n")
 
+    @classmethod
+    def write_derived_text(cls, path: Path, content: str) -> None:
+        """Atomically write a compiler/indexer-owned derived text artifact."""
+
+        cls._write_text(path, content)
+
+    @classmethod
+    def write_derived_json(cls, path: Path, value: dict[str, Any]) -> None:
+        """Atomically write a compiler-owned derived JSON artifact."""
+
+        cls._write_json(path, value)
+
     @staticmethod
     def _read_json(path: Path) -> dict[str, Any]:
         try:
@@ -130,6 +144,8 @@ class KnowledgeStore:
             "assets",
             "knowledge/ir",
             "knowledge/reviews",
+            "knowledge/changesets",
+            "knowledge/candidates",
             "knowledge/graph",
             "wiki/entities",
             "wiki/concepts",
@@ -302,6 +318,18 @@ class KnowledgeStore:
     def review_root(self, project_id: str) -> Path:
         return self.project_path(project_id) / "knowledge" / "reviews"
 
+    def changeset_root(self, project_id: str) -> Path:
+        return self.project_path(project_id) / "knowledge" / "changesets"
+
+    def candidate_root(self, project_id: str, changeset_id: str) -> Path:
+        self.validate_id(changeset_id, "changeset_id")
+        root = self.project_path(project_id) / "knowledge" / "candidates" / changeset_id
+        resolved = root.resolve()
+        candidates = (self.project_path(project_id) / "knowledge" / "candidates").resolve()
+        if not resolved.is_relative_to(candidates):
+            raise KnowledgeStoreError("candidate path escapes project")
+        return root
+
     def task_path(self, project_id: str) -> Path:
         return self.project_path(project_id) / "knowledge" / "task.json"
 
@@ -325,6 +353,28 @@ class KnowledgeStore:
         for path in sorted(self.review_root(project_id).glob("*.json"), reverse=True):
             try:
                 values.append(KnowledgeReview.from_dict(self._read_json(path)))
+            except KnowledgeStoreError:
+                continue
+        return values
+
+    def save_changeset(self, changeset: KnowledgeChangeSet) -> str:
+        path = self.changeset_root(changeset.project_id) / f"{changeset.id}.json"
+        self._write_json(path, changeset.to_dict())
+        return path.relative_to(self.project_path(changeset.project_id)).as_posix()
+
+    def get_changeset(self, project_id: str, changeset_id: str) -> KnowledgeChangeSet:
+        self.validate_id(changeset_id, "changeset_id")
+        path = self.changeset_root(project_id) / f"{changeset_id}.json"
+        return KnowledgeChangeSet.from_dict(self._read_json(path))
+
+    def list_changesets(self, project_id: str) -> list[KnowledgeChangeSet]:
+        root = self.changeset_root(project_id)
+        if not root.exists():
+            return []
+        values: list[KnowledgeChangeSet] = []
+        for path in sorted(root.glob("*.json"), reverse=True):
+            try:
+                values.append(KnowledgeChangeSet.from_dict(self._read_json(path)))
             except KnowledgeStoreError:
                 continue
         return values
@@ -354,6 +404,36 @@ class KnowledgeStore:
         path = self.raw_path(project_id, relative_path)
         self._write_bytes(path, content)
         return path
+
+    def copy_raw(self, project_id: str, relative_path: str, source: str | Path) -> tuple[Path, str]:
+        """Atomically mirror a large raw source while hashing it incrementally."""
+
+        path = self.raw_path(project_id, relative_path)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        digest = hashlib.sha256()
+        with NamedTemporaryFile(
+            mode="wb",
+            dir=path.parent,
+            prefix=f".{path.name}.",
+            suffix=".tmp",
+            delete=False,
+        ) as temp, Path(source).open("rb") as handle:
+            temp_path = Path(temp.name)
+            while block := handle.read(4 * 1024 * 1024):
+                digest.update(block)
+                temp.write(block)
+            temp.flush()
+            os.fsync(temp.fileno())
+        try:
+            os.replace(temp_path, path)
+        finally:
+            if temp_path.exists():
+                temp_path.unlink()
+        try:
+            shutil.copystat(source, path)
+        except OSError:
+            pass
+        return path, digest.hexdigest()
 
     def page_path(self, project_id: str, page_type: str, slug: str) -> Path:
         self.validate_id(slug, "page_slug")

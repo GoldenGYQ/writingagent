@@ -146,6 +146,31 @@ async def test_request_user_input_pauses_plan_and_resolves(tmp_path):
 
 
 @pytest.mark.asyncio
+async def test_evidence_request_allows_natural_attachment_response(tmp_path):
+    sessions = SessionManager(tmp_path)
+    request_tool = RequestUserInputTool(sessions)
+    with request_context(_ctx()):
+        await request_tool.execute(
+            title="补充资质证据",
+            prompt="请上传证书或说明缺失原因。",
+            reason="knowledge_gap",
+            fields=[],
+            actions=[{"id": "submit", "label": "提交材料", "style": "primary"}],
+            allow_message_response=True,
+            accepts_attachments=True,
+            response_scope="knowledge_candidate",
+        )
+
+    pending = pending_interaction(
+        sessions.get_or_create("websocket:chat-1").metadata
+    )
+    assert pending is not None
+    assert pending["allow_message_response"] is True
+    assert pending["accepts_attachments"] is True
+    assert pending["response_scope"] == "knowledge_candidate"
+
+
+@pytest.mark.asyncio
 async def test_runner_stops_immediately_after_input_request(tmp_path):
     sessions = SessionManager(tmp_path)
     request_tool = RequestUserInputTool(sessions)

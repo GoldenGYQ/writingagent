@@ -43,6 +43,14 @@ export function InteractionRequestCard({ request, onRespond }: InteractionReques
         <div>
           <h3 className="text-sm font-semibold">{request.title || "需要你的确认"}</h3>
           {request.prompt ? <p className="mt-1 text-sm text-muted-foreground">{request.prompt}</p> : null}
+          {request.allow_message_response ? (
+            <p className="mt-2 rounded-lg border border-dashed border-primary/25 bg-primary/5 px-3 py-2 text-xs text-muted-foreground">
+              可直接在下方输入框回复{request.accepts_attachments ? "，或拖入文档、图片等补充材料" : ""}；发送后任务会自动继续。
+              {request.response_scope === "knowledge_candidate"
+                ? " 材料将作为知识候选项，审查通过后才会发布到知识库。"
+                : " 材料默认只用于当前任务，不会自动写入长期知识库。"}
+            </p>
+          ) : null}
         </div>
       </div>
 

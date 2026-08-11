@@ -194,6 +194,7 @@ export type SettingsSectionKey =
   | "voice"
   | "browser"
   | "channels"
+  | "knowledge"
   | "apps"
   | "automations"
   | "skills"
@@ -234,6 +235,17 @@ interface AgentSettingsDraft {
   botIcon: string;
   toolHintMaxLength: number;
 }
+
+type KnowledgeRetrievalForm = {
+  parameterMode: "auto" | "manual";
+  mode: "hybrid" | "vector" | "graph";
+  queryRewrite: "auto" | "manual" | "off";
+  maxQueries: number;
+  minDocuments: number;
+  topK: number;
+  expandHops: number;
+  embeddingBackend: "feature_hash" | "fastembed";
+};
 
 type PendingRestartSection = "runtime" | "browser" | "image";
 type PendingRestartSections = Record<PendingRestartSection, boolean>;
@@ -476,6 +488,17 @@ const DEFAULT_AGENT_SETTINGS_DRAFT: AgentSettingsDraft = {
   toolHintMaxLength: 40,
 };
 
+const DEFAULT_KNOWLEDGE_RETRIEVAL_FORM: KnowledgeRetrievalForm = {
+  parameterMode: "auto",
+  mode: "hybrid",
+  queryRewrite: "auto",
+  maxQueries: 3,
+  minDocuments: 3,
+  topK: 8,
+  expandHops: 1,
+  embeddingBackend: "feature_hash",
+};
+
 const DEFAULT_WEB_SEARCH_FORM: WebSearchSettingsUpdate = {
   provider: "duckduckgo",
   apiKey: "",
@@ -543,6 +566,20 @@ function agentDraftFromPayload(
     botName: payload.agent.bot_name,
     botIcon: payload.agent.bot_icon,
     toolHintMaxLength: payload.agent.tool_hint_max_length,
+  };
+}
+
+function knowledgeRetrievalFormFromPayload(payload: SettingsPayload): KnowledgeRetrievalForm {
+  const retrieval = payload.knowledge_retrieval;
+  return {
+    parameterMode: retrieval?.parameter_mode ?? DEFAULT_KNOWLEDGE_RETRIEVAL_FORM.parameterMode,
+    mode: retrieval?.mode ?? DEFAULT_KNOWLEDGE_RETRIEVAL_FORM.mode,
+    queryRewrite: retrieval?.query_rewrite ?? DEFAULT_KNOWLEDGE_RETRIEVAL_FORM.queryRewrite,
+    maxQueries: retrieval?.max_queries ?? DEFAULT_KNOWLEDGE_RETRIEVAL_FORM.maxQueries,
+    minDocuments: retrieval?.min_documents ?? DEFAULT_KNOWLEDGE_RETRIEVAL_FORM.minDocuments,
+    topK: retrieval?.top_k ?? DEFAULT_KNOWLEDGE_RETRIEVAL_FORM.topK,
+    expandHops: retrieval?.expand_hops ?? DEFAULT_KNOWLEDGE_RETRIEVAL_FORM.expandHops,
+    embeddingBackend: retrieval?.embedding_backend ?? DEFAULT_KNOWLEDGE_RETRIEVAL_FORM.embeddingBackend,
   };
 }
 
@@ -668,6 +705,7 @@ export function SettingsView({
   const [providerOAuthCompleting, setProviderOAuthCompleting] = useState(false);
   const [providerOAuthDialogError, setProviderOAuthDialogError] = useState<string | null>(null);
   const [webSearchSaving, setWebSearchSaving] = useState(false);
+  const [knowledgeRetrievalSaving, setKnowledgeRetrievalSaving] = useState(false);
   const [imageGenerationSaving, setImageGenerationSaving] = useState(false);
   const [transcriptionSaving, setTranscriptionSaving] = useState(false);
   const [networkSafetySaving, setNetworkSafetySaving] = useState(false);
@@ -722,6 +760,11 @@ export function SettingsView({
   const [networkSafetyForm, setNetworkSafetyForm] = useState<NetworkSafetySettingsUpdate>(() =>
     initialSettings ? networkSafetyFormFromPayload(initialSettings) : DEFAULT_NETWORK_SAFETY_FORM,
   );
+  const [knowledgeRetrievalForm, setKnowledgeRetrievalForm] = useState<KnowledgeRetrievalForm>(() =>
+    initialSettings
+      ? knowledgeRetrievalFormFromPayload(initialSettings)
+      : DEFAULT_KNOWLEDGE_RETRIEVAL_FORM,
+  );
 
   useEffect(() => {
     setActiveSection(initialSection);
@@ -758,6 +801,7 @@ export function SettingsView({
       setImageGenerationForm(imageGenerationFormFromPayload(payload));
       setTranscriptionForm(transcriptionFormFromPayload(payload));
       setNetworkSafetyForm(networkSafetyFormFromPayload(payload));
+      setKnowledgeRetrievalForm(knowledgeRetrievalFormFromPayload(payload));
       if (payload.restart_required_sections) {
         setPendingRestartSections(pendingRestartSectionsFromPayload(payload));
       }
@@ -1120,6 +1164,21 @@ export function SettingsView({
     );
   }, [networkSafetyForm, settings]);
 
+  const knowledgeRetrievalDirty = useMemo(() => {
+    if (!settings) return false;
+    const current = knowledgeRetrievalFormFromPayload(settings);
+    return (
+      knowledgeRetrievalForm.parameterMode !== current.parameterMode ||
+      knowledgeRetrievalForm.mode !== current.mode ||
+      knowledgeRetrievalForm.queryRewrite !== current.queryRewrite ||
+      knowledgeRetrievalForm.maxQueries !== current.maxQueries ||
+      knowledgeRetrievalForm.minDocuments !== current.minDocuments ||
+      knowledgeRetrievalForm.topK !== current.topK ||
+      knowledgeRetrievalForm.expandHops !== current.expandHops ||
+      knowledgeRetrievalForm.embeddingBackend !== current.embeddingBackend
+    );
+  }, [knowledgeRetrievalForm, settings]);
+
   const configuredModelProviderOptions = useMemo(
     () =>
       settings?.providers
@@ -1470,6 +1529,29 @@ export function SettingsView({
       setError((err as Error).message);
     } finally {
       setNetworkSafetySaving(false);
+    }
+  };
+
+  const saveKnowledgeRetrievalSettings = async () => {
+    if (!settings || !knowledgeRetrievalDirty || knowledgeRetrievalSaving) return;
+    setKnowledgeRetrievalSaving(true);
+    try {
+      const payload = await updateSettings(token, {
+        knowledgeRetrievalParameterMode: knowledgeRetrievalForm.parameterMode,
+        knowledgeRetrievalMode: knowledgeRetrievalForm.mode,
+        knowledgeRetrievalQueryRewrite: knowledgeRetrievalForm.queryRewrite,
+        knowledgeRetrievalMaxQueries: knowledgeRetrievalForm.maxQueries,
+        knowledgeRetrievalMinDocuments: knowledgeRetrievalForm.minDocuments,
+        knowledgeRetrievalTopK: knowledgeRetrievalForm.topK,
+        knowledgeRetrievalExpandHops: knowledgeRetrievalForm.expandHops,
+        knowledgeRetrievalEmbeddingBackend: knowledgeRetrievalForm.embeddingBackend,
+      });
+      applyPayload(payload);
+      setError(null);
+    } catch (err) {
+      setError((err as Error).message);
+    } finally {
+      setKnowledgeRetrievalSaving(false);
     }
   };
 
@@ -2201,6 +2283,16 @@ export function SettingsView({
             isRestarting={isRestarting || hostEngineApplying}
           />
         );
+      case "knowledge":
+        return (
+          <KnowledgeRetrievalSettings
+            form={knowledgeRetrievalForm}
+            setForm={setKnowledgeRetrievalForm}
+            dirty={knowledgeRetrievalDirty}
+            saving={knowledgeRetrievalSaving}
+            onSave={saveKnowledgeRetrievalSettings}
+          />
+        );
       case "apps":
         return (
           <AppsCatalogSettings
@@ -2468,6 +2560,7 @@ const SETTINGS_NAV_ITEMS: Array<{ key: SettingsSectionKey; icon: LucideIcon; fal
   { key: "voice", icon: Mic, fallback: "Voice" },
   { key: "browser", icon: Globe2, fallback: "Web" },
   { key: "channels", icon: MessageCircle, fallback: "Channels" },
+  { key: "knowledge", icon: Brain, fallback: "Knowledge / RAG" },
   { key: "runtime", icon: Server, fallback: "System" },
   { key: "advanced", icon: ShieldCheck, fallback: "Security" },
 ];
@@ -8277,6 +8370,135 @@ function CliAppLogo({ app, showBrandLogos }: { app: CliAppInfo; showBrandLogos: 
         />
       ) : null}
     </span>
+  );
+}
+
+function KnowledgeRetrievalSettings({
+  form,
+  setForm,
+  dirty,
+  saving,
+  onSave,
+}: {
+  form: KnowledgeRetrievalForm;
+  setForm: Dispatch<SetStateAction<KnowledgeRetrievalForm>>;
+  dirty: boolean;
+  saving: boolean;
+  onSave: () => void;
+}) {
+  const { t } = useTranslation();
+  const tx = (key: string, fallback: string) => t(key, { defaultValue: fallback });
+  const automatic = form.parameterMode === "auto";
+  const autoSummary = tx(
+    "settings.knowledge.autoSummary",
+    "Auto selects hybrid retrieval, keeps the result set bounded, and expands one graph hop when useful.",
+  );
+  return (
+    <div className="space-y-7">
+      <section>
+        <SettingsSectionTitle>{tx("settings.knowledge.title", "Knowledge retrieval")}</SettingsSectionTitle>
+        <div className="mb-3 rounded-[22px] border border-blue-500/15 bg-blue-500/[0.06] px-4 py-4 text-[13px] leading-5 text-muted-foreground sm:px-5">
+          <div className="flex items-start gap-3">
+            <Brain className="mt-0.5 h-4 w-4 shrink-0 text-blue-600 dark:text-blue-300" aria-hidden />
+            <div>
+              <div className="font-medium text-foreground">{tx("settings.knowledge.personalized", "Personalized, bounded retrieval")}</div>
+              <p className="mt-1">{automatic ? autoSummary : tx("settings.knowledge.manualSummary", "Manual values are used whenever a retrieval tool call does not provide its own option. Explicit tool arguments always win.")}</p>
+            </div>
+          </div>
+        </div>
+        <SettingsGroup>
+          <SettingsRow
+            title={tx("settings.knowledge.parameterMode", "Parameter mode")}
+            description={tx("settings.knowledge.parameterModeHelp", "Choose whether the runtime uses safe defaults or your retrieval profile.")}
+          >
+            <SegmentedControl
+              value={form.parameterMode}
+              options={[
+                { value: "auto", label: tx("settings.values.auto", "Auto") },
+                { value: "manual", label: tx("settings.values.manual", "Manual") },
+              ]}
+              onChange={(value) => setForm((prev) => ({ ...prev, parameterMode: value as KnowledgeRetrievalForm["parameterMode"] }))}
+            />
+          </SettingsRow>
+          <SettingsRow
+            title={tx("settings.knowledge.mode", "Retrieval mode")}
+            description={tx("settings.knowledge.modeHelp", "Hybrid combines the local index with graph context; vector and graph are useful for focused investigations.")}
+          >
+            {automatic ? (
+              <StatusPill tone="success">hybrid · auto</StatusPill>
+            ) : (
+              <SegmentedControl
+                value={form.mode}
+                options={[
+                  { value: "hybrid", label: "Hybrid" },
+                  { value: "vector", label: "Vector" },
+                  { value: "graph", label: "Graph" },
+                ]}
+                onChange={(value) => setForm((prev) => ({ ...prev, mode: value as KnowledgeRetrievalForm["mode"] }))}
+              />
+            )}
+          </SettingsRow>
+          <SettingsRow
+            title={tx("settings.knowledge.embedding", "Embedding engine")}
+            description={tx("settings.knowledge.embeddingHelp", "Lightweight requires no model; Semantic uses a local Chinese BGE ONNX model and rebuilds only the derived index.")}
+          >
+            <SegmentedControl
+              value={form.embeddingBackend}
+              options={[
+                { value: "feature_hash", label: tx("settings.knowledge.lightweight", "Lightweight") },
+                { value: "fastembed", label: tx("settings.knowledge.semantic", "Semantic") },
+              ]}
+              onChange={(value) => setForm((prev) => ({ ...prev, embeddingBackend: value as KnowledgeRetrievalForm["embeddingBackend"] }))}
+            />
+          </SettingsRow>
+          <SettingsRow
+            title={tx("settings.knowledge.queryRewrite", "Query rewrite")}
+            description={tx("settings.knowledge.queryRewriteHelp", "Controls the bounded query list used by knowledge_research; it never injects the whole Wiki.")}
+          >
+            <SegmentedControl
+              value={form.queryRewrite}
+              options={[
+                { value: "auto", label: tx("settings.values.auto", "Auto") },
+                { value: "manual", label: tx("settings.values.manual", "Manual") },
+                { value: "off", label: tx("settings.values.off", "Off") },
+              ]}
+              onChange={(value) => setForm((prev) => ({ ...prev, queryRewrite: value as KnowledgeRetrievalForm["queryRewrite"] }))}
+            />
+          </SettingsRow>
+          <SettingsRow
+            title={tx("settings.knowledge.topK", "Top-K documents")}
+            description={tx("settings.knowledge.topKHelp", "Maximum Wiki documents returned by one search.")}
+          >
+            {automatic ? <StatusPill>8 docs · auto</StatusPill> : <NumberInput value={form.topK} min={1} max={20} onChange={(topK) => setForm((prev) => ({ ...prev, topK }))} suffix="docs" />}
+          </SettingsRow>
+          <SettingsRow
+            title={tx("settings.knowledge.expandHops", "Graph expansion")}
+            description={tx("settings.knowledge.expandHopsHelp", "How many undirected relationship hops to include (0–2).")}
+          >
+            {automatic ? <StatusPill>1 hop · auto</StatusPill> : <NumberInput value={form.expandHops} min={0} max={2} onChange={(expandHops) => setForm((prev) => ({ ...prev, expandHops }))} suffix="hops" />}
+          </SettingsRow>
+          <SettingsRow
+            title={tx("settings.knowledge.budget", "Research budget")}
+            description={tx("settings.knowledge.budgetHelp", "Maximum bounded sub-queries for knowledge_research.")}
+          >
+            {automatic ? <StatusPill>3 queries · auto</StatusPill> : <NumberInput value={form.maxQueries} min={1} max={4} onChange={(maxQueries) => setForm((prev) => ({ ...prev, maxQueries }))} suffix="queries" />}
+          </SettingsRow>
+          <SettingsRow
+            title={tx("settings.knowledge.minDocuments", "Evidence target")}
+            description={tx("settings.knowledge.minDocumentsHelp", "Stop a research pass early after this many distinct documents are found.")}
+          >
+            {automatic ? <StatusPill>3 docs · auto</StatusPill> : <NumberInput value={form.minDocuments} min={1} max={8} onChange={(minDocuments) => setForm((prev) => ({ ...prev, minDocuments }))} suffix="docs" />}
+          </SettingsRow>
+          <RestartSettingsFooter
+            dirty={dirty}
+            saving={saving}
+            pendingRestart={false}
+            dirtyMessage={tx("settings.knowledge.unsaved", "Save your retrieval profile; it applies to the next Knowledge tool call.")}
+            onSave={onSave}
+          />
+        </SettingsGroup>
+      </section>
+    </div>
   );
 }
 
