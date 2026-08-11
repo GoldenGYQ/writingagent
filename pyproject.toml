@@ -77,6 +77,10 @@ documents = [
     "openpyxl>=3.1.0,<4.0.0",
     "python-pptx>=1.0.0,<2.0.0",
 ]
+desktop = [
+    "pywebview>=6.1.0,<7.0.0",
+    "pyinstaller>=6.15.0,<7.0.0",
+]
 knowledge = [
     # Optional local semantic retrieval and OCR.  Core installations keep the
     # deterministic lexical/feature-hash fallback and never download models.
@@ -121,6 +125,7 @@ dev = [
 
 [project.scripts]
 nanobot = "nanobot.cli.commands:app"
+writing-agent = "nanobot.desktop.app:main"
 
 # Third-party tool plugins register here.  Built-in tools are discovered
 # automatically via pkgutil scanning in ToolLoader.discover().
