@@ -600,7 +600,22 @@ class Config(BaseSettings):
 
         # Do not silently send an explicitly-prefixed model to an unrelated
         # non-gateway provider merely because it is the only configured key.
-        if explicit_provider is not None:
+        # Keep a completely fresh config distinguishable from a mismatched
+        # config, though: with no usable provider at all the caller should
+        # still report "No provider is configured" rather than claiming that
+        # the default model's provider merely lacks an API key.
+        has_other_configured_provider = any(
+            p
+            and (p.api_key or p.api_base)
+            and (explicit_provider is None or spec.name != explicit_provider[1])
+            for spec in PROVIDERS
+            if not spec.is_transcription_only
+            for p in [getattr(self.providers, spec.name, None)]
+        ) or any(
+            isinstance(p, ProviderConfig) and (p.api_key or p.api_base)
+            for p in (self.providers.model_extra or {}).values()
+        )
+        if explicit_provider is not None and has_other_configured_provider:
             return explicit_provider
 
         for spec in PROVIDERS:
