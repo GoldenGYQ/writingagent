@@ -15,7 +15,8 @@
   </p>
 </div>
 
-> 本项目是基于开源项目 [nanobot](https://github.com/HKUDS/nanobot) 的个人二次开发，重点探索 Writing Agent、Interactive Document Workspace、Knowledge Runtime 与 Tool-based RAG。它不是吉林大学官方项目；校徽仅用于个人学习项目的身份标识。
+> 面向政企招投标场景的交互式文档写作Agent，提供企业资料结构化处理、混合检索与来源引用、章节级Agent编辑、ChangeSet人工审批及版本管理能力，探索将Coding Agent的“生成修改—审查差异—确认应用”交互方式应用于企业长文档写作。
+
 
 ## 为什么做这个项目
 
