@@ -18,7 +18,8 @@ from nanobot import __version__
 from nanobot.config.paths import get_logs_dir
 
 APP_NAME = "JLU Writing Agent"
-DEFAULT_PORT = 8765
+DEFAULT_WEBUI_PORT = 8765
+DEFAULT_GATEWAY_PORT = 18790
 PORT_SCAN_LIMIT = 30
 STARTUP_TIMEOUT_SECONDS = 60.0
 
@@ -33,6 +34,27 @@ def _health_url(port: int) -> str:
 
 def _webui_url(port: int) -> str:
     return f"http://127.0.0.1:{port}/"
+
+
+def _configured_webui_url(
+    port: int | None,
+    *,
+    config: str | None,
+    workspace: str | None,
+) -> str:
+    """Return the authenticated WebUI URL written by the gateway child."""
+    from nanobot.cli.runtime_config import _load_runtime_config
+    from nanobot.cli.webui_support import _webui_browser_url
+
+    loaded = _load_runtime_config(config, workspace)
+    configured_url = _webui_browser_url(loaded)
+    if port is None:
+        return configured_url
+    expected_origin = _webui_url(port).rstrip("/")
+    marker = "/#/"
+    if marker in configured_url:
+        return f"{expected_origin}{marker}{configured_url.split(marker, 1)[1]}"
+    return _webui_url(port)
 
 
 def _is_gateway_healthy(port: int, *, timeout: float = 0.5) -> bool:
@@ -62,8 +84,17 @@ def _select_port(preferred_port: int) -> tuple[int, bool]:
     raise RuntimeError("No available local port was found for the desktop gateway.")
 
 
+def _select_available_port(preferred_port: int, *, exclude: set[int] | None = None) -> int:
+    excluded = exclude or set()
+    for port in range(preferred_port, preferred_port + PORT_SCAN_LIMIT):
+        if port not in excluded and _port_is_available(port):
+            return port
+    raise RuntimeError("No available local port was found for the desktop WebUI.")
+
+
 def _gateway_child_command(
     port: int,
+    gateway_port: int,
     *,
     config: str | None,
     workspace: str | None,
@@ -74,7 +105,7 @@ def _gateway_child_command(
         command = [sys.executable, "--desktop-gateway-child"]
     else:
         command = [sys.executable, "-m", "nanobot.desktop.app", "--desktop-gateway-child"]
-    command.extend(["--port", str(port)])
+    command.extend(["--port", str(port), "--gateway-port", str(gateway_port)])
     if config:
         command.extend(["--config", config])
     if workspace:
@@ -94,11 +125,17 @@ def _open_gateway_log(config: str | None) -> IO[bytes]:
 
 def _spawn_gateway(
     port: int,
+    gateway_port: int,
     *,
     config: str | None,
     workspace: str | None,
 ) -> subprocess.Popen[bytes]:
-    command = _gateway_child_command(port, config=config, workspace=workspace)
+    command = _gateway_child_command(
+        port,
+        gateway_port,
+        config=config,
+        workspace=workspace,
+    )
     creation_flags = 0
     startup_info: subprocess.STARTUPINFO | None = None
     if sys.platform == "win32":
@@ -175,12 +212,13 @@ def _run_gateway_child(args: argparse.Namespace) -> NoReturn:
 
     webui(
         port=args.port,
-        gateway_port=args.port,
+        gateway_port=args.gateway_port,
         workspace=args.workspace,
         config=args.config,
         background=False,
         no_open=True,
         yes=True,
+        desktop=True,
     )
     raise SystemExit(0)
 
@@ -188,7 +226,8 @@ def _run_gateway_child(args: argparse.Namespace) -> NoReturn:
 def _build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog=APP_NAME)
     parser.add_argument("--desktop-gateway-child", action="store_true", help=argparse.SUPPRESS)
-    parser.add_argument("--port", type=int, default=DEFAULT_PORT)
+    parser.add_argument("--port", type=int, default=DEFAULT_WEBUI_PORT)
+    parser.add_argument("--gateway-port", type=int, default=DEFAULT_GATEWAY_PORT)
     parser.add_argument("--config")
     parser.add_argument("--workspace")
     parser.add_argument("--version", action="version", version=f"%(prog)s {__version__}")
@@ -198,20 +237,27 @@ def _build_parser() -> argparse.ArgumentParser:
 def run_desktop(args: argparse.Namespace) -> int:
     gateway_process: subprocess.Popen[bytes] | None = None
     try:
-        port, attached = _select_port(args.port)
+        gateway_port, attached = _select_port(args.gateway_port)
+        webui_port: int | None = None
         if not attached:
+            webui_port = _select_available_port(args.port, exclude={gateway_port})
             gateway_process = _spawn_gateway(
-                port,
+                webui_port,
+                gateway_port,
                 config=args.config,
                 workspace=args.workspace,
             )
-            _wait_for_gateway(gateway_process, port)
+            _wait_for_gateway(gateway_process, gateway_port)
 
         import webview  # pyright: ignore[reportMissingImports, reportMissingTypeStubs]
 
         webview.create_window(  # pyright: ignore[reportUnknownMemberType]
             APP_NAME,
-            _webui_url(port),
+            _configured_webui_url(
+                webui_port,
+                config=args.config,
+                workspace=args.workspace,
+            ),
             width=1440,
             height=900,
             min_size=(1080, 680),

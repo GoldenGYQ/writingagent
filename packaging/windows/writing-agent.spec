@@ -9,6 +9,8 @@ project_root = Path(SPECPATH).parents[1]
 icon_path = project_root / "packaging" / "windows" / "assets" / "jlu-writing-agent.ico"
 
 datas = collect_data_files("nanobot", include_py_files=False)
+datas += collect_data_files("nanobot.channels.websocket", include_py_files=True)
+datas += collect_data_files("nanobot.web", include_py_files=True)
 datas += copy_metadata("nanobot-ai")
 datas += [
     (str(project_root / "LICENSE"), "."),
@@ -21,6 +23,7 @@ for package in (
     "nanobot.channels.websocket",
     "nanobot.knowledge",
     "nanobot.providers",
+    "nanobot.web",
 ):
     hidden_imports.update(
         collect_submodules(package, filter=lambda name: ".tests" not in name)

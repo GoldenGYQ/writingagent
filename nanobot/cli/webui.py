@@ -64,6 +64,11 @@ def webui(
         "-y",
         help="Apply safe local WebUI defaults without prompting",
     ),
+    desktop: bool = typer.Option(
+        False,
+        "--desktop",
+        hidden=True,
+    ),
 ) -> None:
     """Prepare the local WebUI, start the gateway, and open the browser workbench."""
     from nanobot.config.loader import resolve_config_env_vars, save_config
@@ -90,7 +95,9 @@ def webui(
         raise typer.Exit(1) from exc
 
     provider_error = _provider_setup_error(resolved_setup_config)
-    settings_setup_error = provider_error if provider_error and created_config else None
+    settings_setup_error = (
+        provider_error if provider_error and (created_config or desktop) else None
+    )
     if settings_setup_error:
         console.print(f"[yellow]Model setup is incomplete: {provider_error}[/yellow]")
         console.print("Configure a provider and model in WebUI Settings → Models.")

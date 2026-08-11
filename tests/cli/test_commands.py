@@ -2146,6 +2146,35 @@ def test_webui_yes_starts_first_run_without_provider_setup(monkeypatch, tmp_path
     assert "Configure a provider and model in WebUI Settings → Models." in result.stdout
 
 
+def test_webui_desktop_reopens_existing_config_without_provider_setup(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    config_file = tmp_path / "config.json"
+    config_file.write_text("{}", encoding="utf-8")
+    seen: dict[str, object] = {}
+
+    monkeypatch.setattr(
+        "nanobot.cli.webui._provider_setup_error",
+        lambda _config: "No API key configured for provider 'custom'.",
+    )
+    _patch_gateway_ports_free(monkeypatch)
+    monkeypatch.setattr("nanobot.cli.webui.sync_workspace_templates", lambda _path: None)
+    monkeypatch.setattr(
+        "nanobot.cli.webui._run_gateway",
+        lambda config, **kwargs: seen.update(config=config, **kwargs),
+    )
+
+    result = runner.invoke(
+        app,
+        ["webui", "--config", str(config_file), "--yes", "--no-open", "--desktop"],
+    )
+
+    assert result.exit_code == 0
+    assert seen["unconfigured_provider_error"] == "No API key configured for provider 'custom'."
+    assert "Configure a provider and model in WebUI Settings → Models." in result.stdout
+
+
 def test_webui_missing_runtime_env_fails_before_starting_gateway(
     monkeypatch,
     tmp_path: Path,
