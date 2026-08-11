@@ -3096,6 +3096,117 @@ describe("SettingsView Apps catalog", () => {
     );
   });
 
+  it("activates a detected DeepSeek model during first-run provider setup", async () => {
+    const base = settingsPayload();
+    let payload: SettingsPayload = {
+      ...base,
+      agent: {
+        ...base.agent,
+        model: "anthropic/claude-opus-4-5",
+        provider: "auto",
+        resolved_provider: "anthropic",
+        has_api_key: false,
+        model_preset: "default",
+      },
+      model_presets: [{
+        ...base.model_presets[0],
+        name: "default",
+        label: "Default",
+        active: true,
+        is_default: true,
+        model: "anthropic/claude-opus-4-5",
+        provider: "auto",
+        resolved_provider: "anthropic",
+      }],
+      model_call_order: [],
+      model_call_order_editable: false,
+      providers: [{
+        name: "deepseek",
+        label: "DeepSeek",
+        configured: false,
+        api_key_required: true,
+        api_key_hint: null,
+        api_base: null,
+        default_api_base: "https://api.deepseek.com",
+        model_catalog: "official",
+      }],
+    };
+    const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url === "/api/settings") return jsonResponse(payload);
+      if (url.startsWith("/api/settings/provider/update?provider=deepseek")) {
+        payload = {
+          ...payload,
+          providers: payload.providers.map((provider) =>
+            provider.name === "deepseek"
+              ? { ...provider, configured: true, api_key_hint: "sk-d...test" }
+              : provider,
+          ),
+        };
+        return jsonResponse(payload);
+      }
+      if (url === "/api/settings/provider-models?provider=deepseek") {
+        return jsonResponse({
+          provider: "deepseek",
+          label: "DeepSeek",
+          status: "available",
+          catalog_kind: "official",
+          models: [
+            { id: "deepseek-v4-flash" },
+            { id: "deepseek-v4-pro" },
+          ],
+          model_count: 2,
+          message: null,
+          fetched_at: 1,
+        });
+      }
+      if (url === "/api/settings/update?model=deepseek-v4-pro&provider=deepseek") {
+        payload = {
+          ...payload,
+          agent: {
+            ...payload.agent,
+            model: "deepseek-v4-pro",
+            provider: "deepseek",
+            resolved_provider: "deepseek",
+            has_api_key: true,
+          },
+          model_presets: payload.model_presets.map((preset) => ({
+            ...preset,
+            model: "deepseek-v4-pro",
+            provider: "deepseek",
+            resolved_provider: "deepseek",
+          })),
+        };
+        return jsonResponse(payload);
+      }
+      if (url === "/api/settings/cli-apps") {
+        return jsonResponse({ apps: [], installed_count: 0 });
+      }
+      if (url === "/api/settings/mcp-presets") {
+        return jsonResponse({ presets: [], installed_count: 0 });
+      }
+      return jsonResponse({});
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    renderSettingsView({ initialSection: "models", initialSettings: payload });
+
+    await chooseProviderToConfigure("DeepSeek");
+    fireEvent.change(screen.getByPlaceholderText("Enter API key"), {
+      target: { value: "sk-deepseek" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Save provider" }));
+
+    await waitFor(() =>
+      expect(fetchMock).toHaveBeenCalledWith(
+        "/api/settings/update?model=deepseek-v4-pro&provider=deepseek",
+        expect.objectContaining({
+          headers: expect.objectContaining({ Authorization: "Bearer tok" }),
+        }),
+      ),
+    );
+  });
+
   it("creates a custom provider with folded advanced request settings", async () => {
     const base = settingsPayload();
     let payload: SettingsPayload = {

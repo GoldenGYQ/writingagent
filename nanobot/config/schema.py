@@ -543,11 +543,14 @@ class Config(BaseSettings):
             return kw in model_lower or kw.replace("-", "_") in model_normalized
 
         # Explicit provider prefix wins — prevents `github-copilot/...codex` matching openai_codex.
+        explicit_provider: tuple[ProviderConfig, str] | None = None
+
         for spec in PROVIDERS:
             if spec.is_transcription_only:
                 continue
             p = getattr(self.providers, spec.name, None)
             if p and model_prefix and normalized_prefix == spec.name:
+                explicit_provider = (p, spec.name)
                 if spec.is_oauth or spec.is_local or spec.is_direct or p.api_key:
                     return p, spec.name
 
@@ -587,10 +590,21 @@ class Config(BaseSettings):
         if local_fallback:
             return local_fallback
 
-        # Fallback: gateways first, then others (follows registry order)
-        # OAuth providers are NOT valid fallbacks — they require explicit model selection
+        # Gateways may intentionally route models whose prefix names an upstream vendor.
         for spec in PROVIDERS:
-            if spec.is_oauth or spec.is_transcription_only:
+            if not spec.is_gateway or spec.is_oauth or spec.is_transcription_only:
+                continue
+            p = getattr(self.providers, spec.name, None)
+            if p and p.api_key:
+                return p, spec.name
+
+        # Do not silently send an explicitly-prefixed model to an unrelated
+        # non-gateway provider merely because it is the only configured key.
+        if explicit_provider is not None:
+            return explicit_provider
+
+        for spec in PROVIDERS:
+            if spec.is_gateway or spec.is_oauth or spec.is_transcription_only:
                 continue
             p = getattr(self.providers, spec.name, None)
             if p and p.api_key:

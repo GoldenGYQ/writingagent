@@ -395,6 +395,39 @@ def test_match_provider_routes_forced_novita_model_api_models() -> None:
     assert config.get_api_base() == "https://api.novita.ai/openai"
 
 
+def test_match_provider_does_not_route_prefixed_anthropic_model_to_deepseek() -> None:
+    config = Config.model_validate({
+        "providers": {
+            "deepseek": {"apiKey": "sk-deepseek"},
+        },
+        "agents": {
+            "defaults": {
+                "model": "anthropic/claude-opus-4-5",
+                "provider": "auto",
+            }
+        },
+    })
+
+    assert config.get_provider_name() == "anthropic"
+    assert config.get_provider().api_key is None
+
+
+def test_match_provider_allows_gateway_to_route_prefixed_upstream_model() -> None:
+    config = Config.model_validate({
+        "providers": {
+            "openrouter": {"apiKey": "sk-or-test"},
+        },
+        "agents": {
+            "defaults": {
+                "model": "anthropic/claude-opus-4-5",
+                "provider": "auto",
+            }
+        },
+    })
+
+    assert config.get_provider_name() == "openrouter"
+
+
 def test_transcription_only_provider_is_not_chat_fallback() -> None:
     config = Config.model_validate({
         "providers": {

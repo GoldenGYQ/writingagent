@@ -473,6 +473,43 @@ function settingsProviderConfigured(
   return payload.agent.has_api_key;
 }
 
+const PROVIDER_BOOTSTRAP_MODEL_PRIORITY: Record<string, readonly string[]> = {
+  deepseek: [
+    "deepseek-v4-pro",
+    "deepseek-v4-flash",
+  ],
+};
+
+function shouldBootstrapProviderModel(
+  payload: SettingsPayload,
+  provider: string,
+): boolean {
+  return (
+    provider in PROVIDER_BOOTSTRAP_MODEL_PRIORITY &&
+    payload.agent.model_preset === "default" &&
+    !payload.model_call_order_editable &&
+    payload.model_call_order.length === 0 &&
+    !payload.agent.has_api_key
+  );
+}
+
+function selectBootstrapProviderModel(
+  provider: string,
+  payload: ProviderModelsPayload,
+): string | null {
+  if (payload.status !== "available" || !payload.models.length) return null;
+  const modelsById = new Map(
+    payload.models.map((model) => [model.id.toLowerCase(), model.id]),
+  );
+  const prioritizedModels = PROVIDER_BOOTSTRAP_MODEL_PRIORITY[provider];
+  for (const candidate of prioritizedModels ?? []) {
+    const exact = modelsById.get(candidate.toLowerCase());
+    if (exact) return exact;
+  }
+  if (prioritizedModels) return null;
+  return payload.models.length === 1 ? payload.models[0]?.id ?? null : null;
+}
+
 const DEFAULT_AGENT_SETTINGS_DRAFT: AgentSettingsDraft = {
   model: "",
   provider: "",
@@ -1605,10 +1642,12 @@ export function SettingsView({
 
   const saveProvider = async (providerName: string) => {
     if (providerSaving) return;
-    const provider = settings?.providers.find((item) => item.name === providerName);
+    if (!settings) return;
+    const provider = settings.providers.find((item) => item.name === providerName);
     if (!provider) return;
     const isOauthProvider = provider.auth_type === "oauth";
     const providerForm = providerForms[providerName] ?? providerFormFromRow(provider);
+    const bootstrapProviderModel = shouldBootstrapProviderModel(settings, providerName);
     const apiKey = providerForm.apiKey.trim();
     const apiKeyRequired = provider.api_key_required ?? true;
     if (!isOauthProvider && !provider.configured && apiKeyRequired && !apiKey) {
@@ -1643,8 +1682,26 @@ export function SettingsView({
         if (field === "region") update.region = providerForm.region.trim();
         if (field === "profile") update.profile = providerForm.profile.trim();
       }
-      const payload = await updateProviderSettings(token, update);
+      let payload = await updateProviderSettings(token, update);
       applyPayload(payload);
+      if (bootstrapProviderModel) {
+        const catalog = await fetchProviderModels(token, providerName);
+        const detectedModel = selectBootstrapProviderModel(providerName, catalog);
+        if (!detectedModel) {
+          setActiveSection("models");
+          setError(t("settings.models.providerModelDetectionFailed", {
+            defaultValue:
+              "The provider was saved, but no default chat model could be detected. Select a model before chatting.",
+          }));
+          return;
+        }
+        payload = await updateSettings(token, {
+          model: detectedModel,
+          provider: providerName,
+        });
+        applyPayload(payload);
+        onModelNameChange(payload.agent.model || null);
+      }
       if (payload.requires_restart) {
         setPendingRestartSections((prev) => ({ ...prev, image: true }));
       }
