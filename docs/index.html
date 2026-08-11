@@ -1,0 +1,170 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="theme-color" content="#0b1120" />
+    <meta
+      name="description"
+      content="GYQ 的 AI Agent 工程作品集：Writing Agent、Knowledge Runtime、Hybrid RAG 与 WoTAgent。"
+    />
+    <title>GYQ / Agent Systems</title>
+    <link rel="stylesheet" href="./styles.css" />
+    <script defer src="./main.js"></script>
+  </head>
+  <body>
+    <a class="skip-link" href="#main">跳到主要内容</a>
+    <div class="page-shell">
+      <header class="topbar">
+        <a class="brand" href="#top" aria-label="回到首页">
+          <span class="brand-mark">G</span>
+          <span>GYQ / AGENT SYSTEMS</span>
+        </a>
+        <nav class="nav" aria-label="主导航">
+          <a href="#work">Projects</a>
+          <a href="#method">Method</a>
+          <a href="#about">About</a>
+          <a href="https://github.com/GoldenGYQ" target="_blank" rel="noreferrer">GitHub ↗</a>
+        </nav>
+        <button class="theme-toggle" type="button" data-theme-toggle aria-label="切换主题" aria-pressed="false">
+          <span class="theme-icon" aria-hidden="true">◐</span>
+          <span class="theme-label">Theme</span>
+        </button>
+      </header>
+
+      <main id="main">
+        <section class="hero section" id="top">
+          <div class="hero-copy">
+            <p class="eyebrow"><span class="pulse"></span> AI AGENT ENGINEERING · 2026</p>
+            <h1>让 Agent 不只回答问题，<em>而是持续工作。</em></h1>
+            <p class="hero-lede">
+              我关注 Agent 如何从一次性对话，走向可检索、可审阅、可恢复的长期任务系统：
+              从结构化知识到可靠写作，从设备能力到受约束执行。
+            </p>
+            <div class="hero-actions">
+              <a class="button button-primary" href="#work">查看核心项目 <span>↓</span></a>
+              <a class="button button-quiet" href="https://github.com/GoldenGYQ/writingagent" target="_blank" rel="noreferrer">打开代码仓库 ↗</a>
+            </div>
+          </div>
+          <div class="hero-visual" aria-label="Agent system overview">
+            <div class="visual-topline"><span>FIELD NOTE / 01</span><span>BUILD · VERIFY · EVOLVE</span></div>
+            <div class="orbit orbit-one"></div>
+            <div class="orbit orbit-two"></div>
+            <div class="core-node">
+              <span class="core-caption">AGENT</span>
+              <strong>WORK<br />LOOP</strong>
+              <span class="core-status"><i></i> evidence-aware</span>
+            </div>
+            <div class="node node-knowledge"><span>01</span> KNOWLEDGE</div>
+            <div class="node node-writing"><span>02</span> WRITING</div>
+            <div class="node node-device"><span>03</span> DEVICES</div>
+            <div class="visual-footline"><span>TOOL CALLING</span><span>HUMAN REVIEW</span><span>PERSISTENT STATE</span></div>
+          </div>
+        </section>
+
+        <section class="section work-section" id="work">
+          <div class="section-heading">
+            <div>
+              <p class="eyebrow">SELECTED WORK / 01</p>
+              <h2>把生成变成一条<br /><span>可追踪的工作链。</span></h2>
+            </div>
+            <p class="section-note">核心项目聚焦 Writing Agent；第二项目展示我在工具编排、约束执行和多 Agent 运行时上的另一条实践路径。</p>
+          </div>
+
+          <article class="project project-featured">
+            <div class="project-meta">
+              <span class="project-number">01</span>
+              <span class="project-kind">WRITING + KNOWLEDGE RUNTIME</span>
+              <span class="project-date">2026.01 — 2026.07</span>
+            </div>
+            <div class="project-header">
+              <div>
+                <p class="project-kicker">标书智造师 / 交互式文本生成智能体</p>
+                <h3>有证据的写作，<br /><em>有边界的修改。</em></h3>
+              </div>
+              <span class="role-stamp">主要负责人</span>
+            </div>
+            <p class="project-summary">
+              面向政企招投标资料分散、检索困难和生成缺乏依据等问题，构建融合结构化知识库、Hybrid RAG 与章节级 Agent 编辑的标书写作平台。
+            </p>
+
+            <div class="pipeline" aria-label="Writing Agent pipeline">
+              <div class="pipeline-step"><span>01</span><strong>资料</strong><small>扫描 / 抽取</small></div>
+              <div class="pipeline-arrow">→</div>
+              <div class="pipeline-step active"><span>02</span><strong>KnowledgeIR</strong><small>实体 / 关系 / 证据</small></div>
+              <div class="pipeline-arrow">→</div>
+              <div class="pipeline-step"><span>03</span><strong>Wiki + Graph</strong><small>编译 / 校验 / 发布</small></div>
+              <div class="pipeline-arrow">→</div>
+              <div class="pipeline-step active"><span>04</span><strong>Hybrid RAG</strong><small>向量 / 词法 / 图</small></div>
+              <div class="pipeline-arrow">→</div>
+              <div class="pipeline-step"><span>05</span><strong>章节编辑</strong><small>ChangeSet / Revision</small></div>
+            </div>
+
+            <div class="project-detail-grid">
+              <div class="detail-block">
+                <p class="detail-label">WHAT I BUILT</p>
+                <p>设计 Skill/Tool 扩展边界与 KnowledgeIR 数据模型；完成知识库构建、审核发布、混合检索、证据绑定和章节级写作修改闭环。</p>
+              </div>
+              <div class="detail-block">
+                <p class="detail-label">WHY IT MATTERS</p>
+                <p>模型不直接覆盖文档。每次修改先形成 ChangeSet，经人工确认后生成新 Revision，保留 diff、来源、基线和恢复路径。</p>
+              </div>
+            </div>
+            <div class="tag-row">
+              <span>Python</span><span>FastAPI</span><span>LiteLLM</span><span>ReAct</span><span>Tool Calling</span><span>KnowledgeIR</span><span>Hybrid RAG</span><span>Human-in-the-loop</span>
+            </div>
+            <a class="project-link" href="https://github.com/GoldenGYQ/writingagent" target="_blank" rel="noreferrer">查看 Writing Agent 仓库 <span>↗</span></a>
+          </article>
+
+          <div class="supporting-projects">
+            <article class="project project-secondary">
+              <div class="project-meta"><span class="project-number">02</span><span class="project-kind">AI + IOT / TOOL EXECUTION</span></div>
+              <div class="project-header">
+                <div><p class="project-kicker">WoTAgent</p><h3>把设备能力<br /><em>变成受约束的工具。</em></h3></div>
+                <span class="arrow-badge">↗</span>
+              </div>
+              <p class="project-summary">面向物联网多 Agent 执行场景，将 WoT Thing Description 编译为 MCP 能力，通过 Task DAG、RBAC、Policy、Scope 和执行后验证约束模型行为。</p>
+              <div class="mini-flow"><span>TD</span><b>→</b><span>MCP</span><b>→</b><span>POLICY</span><b>→</b><span>RUN</span><b>→</b><span>VERIFY</span></div>
+              <div class="tag-row"><span>Python</span><span>FastAPI</span><span>Vue 3</span><span>MCP</span><span>Task DAG</span><span>RBAC</span></div>
+              <a class="project-link" href="https://github.com/GoldenGYQ/WoTAgent" target="_blank" rel="noreferrer">查看 WoTAgent 仓库 <span>↗</span></a>
+            </article>
+            <aside class="signal-card">
+              <p class="eyebrow">THE THROUGH-LINE</p>
+              <h3>Agent 的价值，<br /><em>不只在生成。</em></h3>
+              <ul>
+                <li><span>01</span> 把不确定的模型输出放进可观察的工具闭环</li>
+                <li><span>02</span> 把知识和权限变成模型必须遵守的边界</li>
+                <li><span>03</span> 把修改、证据和执行结果留下可恢复的记录</li>
+              </ul>
+            </aside>
+          </div>
+        </section>
+
+        <section class="section method-section" id="method">
+          <div class="section-heading compact-heading">
+            <div><p class="eyebrow">HOW I THINK / 02</p><h2>从模型能力，<br /><span>走到系统责任。</span></h2></div>
+            <p class="section-note">我更关心“出了问题之后能不能解释、审核和恢复”，而不只是一次回答是否看起来正确。</p>
+          </div>
+          <div class="method-grid">
+            <div class="method-card"><span class="method-index">A</span><h3>Evidence first</h3><p>让知识拥有来源位置、引用片段和关系上下文；检索返回有界证据，而不是把整个知识库塞进上下文。</p></div>
+            <div class="method-card"><span class="method-index">B</span><h3>Changes over overwrite</h3><p>让 Agent 提交结构化修改，经过确认再生成 Revision；保留 diff、基线、反馈和回退路径。</p></div>
+            <div class="method-card"><span class="method-index">C</span><h3>Constraints are product</h3><p>用 Tool、Policy、Scope、Schema 和人工确认把模型的能力放进可验证的边界里。</p></div>
+          </div>
+        </section>
+
+        <section class="section about-section" id="about">
+          <div class="about-panel">
+            <div><p class="eyebrow">ABOUT / 03</p><h2>AI Agent<br /><span>Application Engineer</span></h2></div>
+            <div class="about-copy">
+              <p>我主要使用 Python 构建 Agent Runtime、知识工程和工具执行系统，关注 LLM 与真实工作流之间的工程边界。</p>
+              <p class="muted">公开仓库中的实现、设计文档和测试记录是项目说明的主要依据。页面只展示可公开的项目摘要，不包含本地路径、密钥或内部材料。</p>
+              <div class="about-links"><a href="https://github.com/GoldenGYQ" target="_blank" rel="noreferrer">GitHub <span>↗</span></a><a href="https://github.com/HKUDS/nanobot" target="_blank" rel="noreferrer">Upstream / nanobot <span>↗</span></a></div>
+            </div>
+          </div>
+        </section>
+      </main>
+
+      <footer class="footer"><span>GYQ / AGENT SYSTEMS</span><span>Built with evidence, constraints &amp; curiosity.</span><a href="#top">Back to top ↑</a></footer>
+    </div>
+  </body>
+</html>
