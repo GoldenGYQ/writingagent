@@ -453,7 +453,7 @@ class WebSearchTool(Tool):
 
     async def _search_olostep(self, query: str, n: int) -> str:
         try:
-            from olostep import (  # pyright: ignore[reportMissingTypeStubs, reportAttributeAccessIssue]
+            from olostep import (  # pyright: ignore[reportMissingImports, reportMissingTypeStubs, reportAttributeAccessIssue]
                 AsyncOlostep,  # pyright: ignore[reportUnknownVariableType]
                 Olostep_BaseError,  # pyright: ignore[reportUnknownVariableType, reportAttributeAccessIssue]
             )
