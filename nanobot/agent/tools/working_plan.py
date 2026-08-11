@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from copy import deepcopy
 from datetime import datetime
-from typing import Any, cast
+from typing import Any
 from uuid import uuid4
 
 from nanobot.agent.tools.base import Tool, ToolResult, tool_parameters
@@ -128,7 +128,14 @@ class CreateWorkingPlanTool(Tool, _WorkingPlanMixin):
             return None
         return RuntimeContextBlock(source="working_plan", content=state)
 
-    async def execute(self, title: str, objective: str, kind: str, steps: list[dict[str, Any]], **_: Any) -> str:
+    async def execute(  # pyright: ignore[reportIncompatibleMethodOverride]
+        self,
+        title: str,
+        objective: str,
+        kind: str,
+        steps: list[dict[str, Any]],
+        **_: Any,
+    ) -> str:
         session = self._session()
         if session is None:
             return ToolResult.error("Error: create_working_plan requires an active session.")
@@ -142,7 +149,7 @@ class CreateWorkingPlanTool(Tool, _WorkingPlanMixin):
             "status": "active",
             "title": title.strip(),
             "objective": objective.strip(),
-            "steps": [dict(cast(dict[str, Any], step)) for step in steps],
+            "steps": [dict(step) for step in steps],
             "created_at": existing.get("created_at", now) if existing else now,
             "updated_at": now,
         }
@@ -187,7 +194,7 @@ class UpdateWorkingPlanTool(Tool, _WorkingPlanMixin):
             "complete ordered step list so the runtime state remains authoritative."
         )
 
-    async def execute(
+    async def execute(  # pyright: ignore[reportIncompatibleMethodOverride]
         self,
         base_version: str,
         status: str,
@@ -213,7 +220,7 @@ class UpdateWorkingPlanTool(Tool, _WorkingPlanMixin):
             **plan,
             "version": current + 1,
             "status": status,
-            "steps": [dict(cast(dict[str, Any], step)) for step in steps],
+            "steps": [dict(step) for step in steps],
             "updated_at": _now(),
         }
         if title is not None:

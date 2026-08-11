@@ -1,73 +1,83 @@
-# 工具使用说明
+# Tool Usage Notes
 
-## 通用工具合约
+## General Tool Contract
 
-- 使用与任务直接匹配的最具体的结构化工具。
-- 在状态不确定时，在进行写入操作之前先使用只读发现操作。
-- 不要将 `exec` 作为文件、搜索、网页、消息或日程安排的通用替代方案。
-- 如果工具失败，请阅读错误信息，刷新相关状态，然后尝试不同的方法，而不是重复相同的调用。
-- 在有意义的更改之后，通过最小可靠的检查来验证结果：重新读取更改后的状态、运行有针对性的测试或检查命令输出。
-- 当在回答前需要使用工具时，不要在调用工具时附带最终答案。请等待工具结果，然后再回答。
-- 将安全和工作区边界错误视为真实的限制，而不是需要绕过的障碍。
-- 将明确的用户请求视为在当前对话中完成该请求的授权。
-- 对于多步骤任务，先简要概述计划，然后执行。仅在需要确认不可逆操作或无法根据现有上下文和工具解决关键选择时才等待。
-- 对于编码和技术任务，继续进行实现和验证；不要在计划、诊断或看似合理的输出处停止。
+- Use the narrowest structured tool that directly matches the task.
+- Use read-only discovery before writes when state is uncertain.
+- Do not use `exec` as a universal workaround for files, search, web, messages, or schedules.
+- If a tool fails, read the error, refresh the relevant state, and retry with a different approach instead of repeating the same call.
+- After meaningful changes, verify the result with the smallest reliable check: re-read changed state, run targeted tests, or inspect command output.
+- When tools are needed before answering, do not include the final answer with the tool calls. Wait for the tool results, then answer once.
+- Respect safety and workspace-boundary errors as real limits, not obstacles to bypass.
+- Treat a clear user request as authorization to complete it in the current turn.
+- For multi-step tasks, outline the plan briefly and then execute it. Wait only when an
+  irreversible action needs confirmation or an essential choice cannot be resolved from the
+  available context and tools.
+- For coding and technical tasks, continue through implementation and verification; do not
+  stop at a plan, diagnosis, or plausible-looking output.
 
-## 发现与读取
+## Discovery and Reading
 
-- 在路径不确定时，在 `read_file` 之前使用 `find_files` 或 `list_dir` 来定位工作区路径。
-- 使用 `grep` 在工作区内进行内容搜索；对于普通搜索，优先使用它而非 shell 的 grep。
-- `grep` 默认 `output_mode="files_with_matches"`；如需匹配行及其上下文，请使用 `output_mode="content"`。
-- 对于包含正则表达式字符的字面量关键字，使用 `fixed_strings=true`。
-- 使用 `output_mode="count"` 在读取完整匹配结果之前先评估搜索规模。
-- 使用 `head_limit` 和 `offset` 在大结果集中分页浏览。
-- 搜索工具会强制执行二进制文件和文件大小限制，并在结果中报告跳过的文件。
+- Use `find_files` or `list_dir` to locate workspace paths before `read_file` when a path is uncertain.
+- Use `grep` for content search inside the workspace; prefer it over shell grep for ordinary searches.
+- `grep` defaults to `output_mode="files_with_matches"`; use `output_mode="content"` for matching lines with context.
+- Use `fixed_strings=true` for literal keywords containing regex characters.
+- Use `output_mode="count"` to size a broad search before reading full matches.
+- Use `head_limit` and `offset` to page across large result sets.
+- Search tools enforce binary and file-size limits and report skipped files in the result.
 
-## 文件与编码工作流
+## File and Coding Workflows
 
-- 对于代码或配置更改，默认循环为：定位（`find_files`/`grep`）、检查（`read_file`）、编辑（`apply_patch`），然后验证（`exec` 或重新读取）。
-- 在编辑之前，将用户的验收标准转化为具体的检查项。实现之后，运行这些检查并检查最终的差异或产物；不要用看似合理的解释来替代验证。
-- 对于二进制、数值和可视化产物，在有用时创建确定性的可检查表示形式。将图表或图像渲染为 PNG 并对其调用 `read_file`，以便视觉证据能够传递给模型；不要猜测文本、测量值或恢复的数据。
-- 在解释复合产物时，使用可用的格式元数据、图层、标识符、时间戳或语义部分来提取所请求的内容，而不是根据视觉显著性进行猜测。
-- 永远不要编造缺失的记录或测量值。在修复产物时，如果有原始使用者或检查器，请使用它们来验证结果。
-- 使用 `apply_patch` 作为默认的代码编辑工具，尤其适用于多文件更改、结构性编辑、生成的代码、移动、添加或删除。
-- 当补丁不确定时，使用 `apply_patch dry_run=true`，在写入之前进行验证并获取更改摘要。
-- 仅对单个文件中的小型精确替换使用 `edit_file`，并从 `read_file` 中复制 `old_text`；在编辑特定编号行时，将确切行作为 `line_hint` 传入；当存在歧义时，添加 `occurrence` 或 `expected_replacements`。
-- 使用 `write_file` 创建新文件或有意的完整文件重写，而不是进行常规的部分编辑。
-- 如果 `apply_patch` 或 `edit_file` 失败，使用 `force=true` 重新读取，缩小上下文范围，并尝试更小的补丁，而不是切换到 shell 的 `sed` 或 `echo`。
+- For code or config changes, the default loop is: locate (`find_files`/`grep`), inspect (`read_file`), edit (`apply_patch`), then verify (`exec` or re-read).
+- Translate the user's acceptance criteria into concrete checks before editing. After the
+  implementation, run those checks and inspect the final diff or artifact; do not substitute
+  a plausible explanation for verification.
+- For binary, numerical, and visual artifacts, create a deterministic inspectable
+  representation when useful. Render plots or images to PNG and call `read_file` on them so
+  visual evidence reaches the model; do not guess text, measurements, or recovered data.
+- When interpreting composite artifacts, use available format metadata, layers, identifiers,
+  timestamps, or semantic sections to isolate the requested content instead of guessing from
+  visual prominence.
+- Never invent missing records or measurements. When repairing an artifact, validate the
+  result with its original consumer or checker when one is available.
+- Use `apply_patch` as the default code editing tool, especially for multi-file changes, structural edits, generated code, moves, adds, or deletes.
+- Use `apply_patch dry_run=true` when the patch is uncertain and you want validation plus a change summary before writing.
+- Use `edit_file` only for small exact replacements in one file, with `old_text` copied from `read_file`; when editing a specific numbered line, pass that exact line as `line_hint`; add `occurrence` or `expected_replacements` when ambiguity matters.
+- Use `write_file` for new files or intentional full-file rewrites, not routine partial edits.
+- If `apply_patch` or `edit_file` fails, re-read with `force=true`, narrow the context, and try a smaller patch rather than switching to shell `sed` or `echo`.
 
-## 进程执行
+## Process Execution
 
-- 使用 `exec` 进行测试、构建、包管理命令、git 命令以及其他进程执行。
-- 对于常规的工作区检查和编辑，优先使用专用的文件/搜索工具，而不是 `cat`、shell `find`、shell `grep`、`sed` 或 `echo`。
-- 尽可能使用非交互式标志，如 `-y` 或 `--yes`。
-- 命令具有可配置的超时时间（默认 60 秒），危险命令会被阻止，并且输出会被截断。
-- 对于长时间运行或交互式命令，传入 `yield_time_ms`；如果进程继续运行，继续使用 `write_stdin`。
-- 使用 `write_stdin` 进行轮询、提供标准输入、关闭标准输入、使用 `wait_for` 等待预期输出，或终止现有的执行会话。
-- 在上下文切换后，使用 `list_exec_sessions` 恢复活动会话 ID。
+- Use `exec` for tests, builds, package commands, git commands, and other process execution.
+- Prefer dedicated file/search tools over `cat`, shell `find`, shell `grep`, `sed`, or `echo` for ordinary workspace inspection and edits.
+- Use non-interactive flags such as `-y` or `--yes` when available.
+- Commands have a configurable timeout (default 60s), dangerous commands are blocked, and output is truncated.
+- For long-running or interactive commands, pass `yield_time_ms`; if the process keeps running, continue with `write_stdin`.
+- Use `write_stdin` to poll, provide stdin, close stdin, wait for expected output with `wait_for`, or terminate an existing exec session.
+- Use `list_exec_sessions` to recover active session IDs after context shifts.
 
-## CLI 应用附件
+## CLI App Attachments
 
-- 当运行时上下文列出 `CLI App Attachment` 或 `CLI App Mention` 时，将 `@name` 视为用户有意附加到当前对话的应用能力。
-- 如果任务可能需要特定于应用的行为，请先阅读列出的技能，然后使用该 `name` 调用 `run_cli_app`。
-- 除非用户明确要求使用这种更底层的路径，否则不要通过 shell 或通用进程工具来运行附加的 CLI 应用。
-- 如果应用 CLI 缺失、缺少本地桌面/应用/API 先决条件，或无法完成请求的操作，请说明具体的障碍以及尝试过的方法。
+- When Runtime Context lists a `CLI App Attachment` or `CLI App Mention`, treat the `@name` as an app capability the user intentionally attached to the current turn.
+- If the task may need app-specific behavior, read the listed skill first, then call `run_cli_app` with that `name`.
+- Do not run an attached CLI app through shell or generic process tools unless the user explicitly asks for that lower-level path.
+- If the app CLI is missing, lacks local desktop/app/API prerequisites, or cannot complete the requested action, explain that concrete blocker and what was attempted.
 
-## 网页与外部信息
+## Web and External Information
 
-- 当用户询问当前信息、特定 URL 或可能已更改的信息时，使用网页工具。
-- 使用 `web_search` 查找来源，使用 `web_fetch` 获取需要仔细阅读的特定页面或结果。
-- 当工具可以验证时，不要编造对时效性敏感的事实。
+- Use web tools when the user asks for current information, a specific URL, or information likely to have changed.
+- Use `web_search` to find sources and `web_fetch` for a specific page or result that needs closer reading.
+- Do not invent freshness-sensitive facts when tools can verify them.
 
-## 消息与媒体
+## Messaging and Media
 
-- 直接通过文本回复当前对话。不要在当前聊天中使用 'message' 工具进行常规回复。
-- 仅将 `message` 用于主动发送、跨渠道投递，或通过其 `media` 参数投递现有的本地文件和生成的图像。
-- `read_file` 仅读取内容供分析使用；它不会向用户投递文件。
-- 当 'generate_image' 创建图像后，使用 'message' 并将产物路径放入 'media' 参数中。
+- Reply directly with text for the current conversation. Do not use the 'message' tool for normal replies in the current chat.
+- Use `message` only for proactive sends, cross-channel delivery, or delivering existing local files and generated images through its `media` parameter.
+- `read_file` only reads content for analysis; it does not deliver a file to the user.
+- When 'generate_image' creates images, call 'message' with the artifact paths in the 'media' parameter.
 
-## 日程安排与后台任务
+## Scheduling and Background Work
 
-- 使用 `cron` 进行提醒或周期性任务；不要通过 `exec` 运行 `nanobot cron`。
-- 对于心跳任务，更新 `HEARTBEAT.md`；默认网关心跳 cron 作业在启用时会处理周期性检查。
-- 当用户期望收到实际通知时，不要只将提醒写入记忆文件。
+- Use `cron` for scheduled reminders or recurring jobs; do not run `nanobot cron` through `exec`.
+- For heartbeat tasks, update `HEARTBEAT.md`; the default gateway heartbeat cron job handles periodic checks when enabled.
+- Do not write reminders only to memory files when the user expects an actual notification.

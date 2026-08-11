@@ -147,7 +147,8 @@ class _WritingToolMixin:
         if selected_project_id is None:
             knowledge_context = session.metadata.get("knowledge_context")
             if isinstance(knowledge_context, Mapping):
-                value = knowledge_context.get("selected_project_id")
+                typed_context = cast(Mapping[str, Any], knowledge_context)
+                value = typed_context.get("selected_project_id")
                 if isinstance(value, str) and value.strip():
                     selected_project_id = value.strip()
         if not selected_project_id:

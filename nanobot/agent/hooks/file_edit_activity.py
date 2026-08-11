@@ -92,7 +92,7 @@ class FileEditActivityHook(AgentHook):
         trackers = self._trackers_by_call.get(key, [])
         if trackers:
             typed_params = cast(dict[str, Any], params) if isinstance(params, dict) else {}
-            events = []
+            events: list[dict[str, Any]] = []
             if key in self._deferred_calls:
                 events.extend(build_file_edit_start_event(tracker, typed_params) for tracker in trackers)
             events.extend(build_file_edit_end_event(tracker) for tracker in trackers)
@@ -117,7 +117,7 @@ class FileEditActivityHook(AgentHook):
                 self._deferred_calls.discard(key)
                 return
             typed_params = cast(dict[str, Any], params) if isinstance(params, dict) else {}
-            events = []
+            events: list[dict[str, Any]] = []
             if key in self._deferred_calls:
                 events.extend(build_file_edit_start_event(tracker, typed_params) for tracker in trackers)
             events.extend(build_file_edit_error_event(tracker, error_text) for tracker in trackers)

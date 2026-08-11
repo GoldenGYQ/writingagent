@@ -82,10 +82,11 @@ def normalize_webui_file_citation(value: Any) -> dict[str, Any] | None:
     """Validate the bounded file/line anchor carried by the WebUI envelope."""
     if not isinstance(value, Mapping):
         return None
-    path = value.get("path")
-    start_line = value.get("start_line")
-    end_line = value.get("end_line")
-    quote = normalize_webui_quote(value.get("quote"))
+    citation = cast(Mapping[str, Any], value)
+    path = citation.get("path")
+    start_line = citation.get("start_line")
+    end_line = citation.get("end_line")
+    quote = normalize_webui_quote(citation.get("quote"))
     if (
         not isinstance(path, str)
         or not path.strip()

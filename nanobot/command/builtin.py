@@ -978,7 +978,7 @@ async def cmd_knowledge(ctx: CommandContext) -> OutboundMessage | None:
         scope_resolver = getattr(ctx.loop, "workspace_scopes", None)
         scope = (
             scope_resolver.for_message(ctx.msg, ctx.session.metadata)
-            if scope_resolver is not None and ctx.session is not None
+            if scope_resolver is not None
             else None
         )
         scoped_workspace = getattr(scope, "project_path", None)
@@ -995,7 +995,7 @@ async def cmd_knowledge(ctx: CommandContext) -> OutboundMessage | None:
     project = result["project"]
     task = result["task"]
     ctx.turn_scopes.append(goal_mutation_permission(True))
-    session_metadata = ctx.session.metadata if isinstance(ctx.session.metadata, dict) else {}
+    session_metadata = ctx.session.metadata
     ctx.session.metadata = session_metadata
     knowledge_context = set_knowledge_context(
         session_metadata,

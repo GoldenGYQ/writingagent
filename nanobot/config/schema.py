@@ -16,7 +16,11 @@ if TYPE_CHECKING:
     from nanobot.agent.tools.image_generation import ImageGenerationToolConfig
     from nanobot.agent.tools.self import MyToolConfig
     from nanobot.agent.tools.shell import ExecToolConfig
-    from nanobot.agent.tools.web import WebToolsConfig
+    from nanobot.agent.tools.web import (  # noqa: F401
+        WebFetchConfig,  # pyright: ignore[reportUnusedImport]
+        WebSearchConfig,  # pyright: ignore[reportUnusedImport]
+        WebToolsConfig,
+    )
 
 
 class ChannelsConfig(Base):
@@ -691,3 +695,40 @@ try:
     _resolve_tool_config_refs()
 except ImportError:
     pass
+
+
+_LAZY_TOOL_CONFIG_EXPORTS = {
+    "ExecToolConfig": ("nanobot.agent.tools.shell", "ExecToolConfig"),
+    "FileToolsConfig": ("nanobot.agent.tools.filesystem", "FileToolsConfig"),
+    "CliAppsToolConfig": ("nanobot.agent.tools.cli_apps", "CliAppsToolConfig"),
+    "WebToolsConfig": ("nanobot.agent.tools.web", "WebToolsConfig"),
+    "WebSearchConfig": ("nanobot.agent.tools.web", "WebSearchConfig"),
+    "WebFetchConfig": ("nanobot.agent.tools.web", "WebFetchConfig"),
+    "MyToolConfig": ("nanobot.agent.tools.self", "MyToolConfig"),
+    "ImageGenerationToolConfig": (
+        "nanobot.agent.tools.image_generation",
+        "ImageGenerationToolConfig",
+    ),
+}
+
+
+def __getattr__(name: str) -> Any:
+    """Resolve compatibility exports after a circular first import.
+
+    Tool discovery can import this module while a tool config module is only
+    partially initialized.  In that case the eager compatibility pass above
+    intentionally yields, but the module remains cached without its historic
+    re-exports.  Module-level lazy lookup makes later ``from ... import`` calls
+    deterministic regardless of import order.
+    """
+    target = _LAZY_TOOL_CONFIG_EXPORTS.get(name)
+    if target is None:
+        raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
+
+    from importlib import import_module
+
+    module_name, attribute_name = target
+    value = getattr(import_module(module_name), attribute_name)
+    globals()[name] = value
+    _resolve_tool_config_refs()
+    return value

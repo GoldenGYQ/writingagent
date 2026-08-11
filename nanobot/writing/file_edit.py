@@ -32,8 +32,6 @@ def propose_file_changeset(
         raise WritingFileEditError("read-only execution policy does not allow source edits")
     if execution_policy not in {"ask", "auto"}:
         raise WritingFileEditError(f"unsupported execution policy: {execution_policy}")
-    if not isinstance(content, str):
-        raise WritingFileEditError("edited content must be text")
     if len(content) > MAX_WEBUI_EDIT_CHARS:
         raise WritingFileEditError("edited content is too large")
 

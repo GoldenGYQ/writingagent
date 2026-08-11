@@ -192,10 +192,14 @@ def resolve_interaction(
 
     # 构建操作ID到操作定义的映射字典
     # 只处理包含'id'字段的字典项，确保数据完整性
-    action_items = {
-        str(item.get("id")): item
-        for item in actions if isinstance(item, dict) and item.get("id")
-    } if isinstance(actions, list) else {}
+    action_items: dict[str, dict[str, Any]] = {}
+    if isinstance(actions, list):
+        for raw_action in cast(list[Any], actions):
+            if not isinstance(raw_action, dict):
+                continue
+            item = cast(dict[str, Any], raw_action)
+            if item.get("id"):
+                action_items[str(item["id"])] = item
 
     # 查找用户选择的操作
     selected_action = action_items.get(action)
@@ -213,10 +217,14 @@ def resolve_interaction(
     # 只在字段定义存在且为列表时进行验证
     if isinstance(fields, list):
         # 构建字段ID到字段定义的映射
-        field_items = {
-            str(item.get("id")): item
-            for item in fields if isinstance(item, dict) and item.get("id")
-        }
+        typed_fields = cast(list[Any], fields)
+        field_items: dict[str, dict[str, Any]] = {}
+        for raw_field in typed_fields:
+            if not isinstance(raw_field, dict):
+                continue
+            field_item = cast(dict[str, Any], raw_field)
+            if field_item.get("id"):
+                field_items[str(field_item["id"])] = field_item
 
         # 3.1 检查是否有未定义的字段
         # 用户提交的字段必须在字段定义中存在
@@ -226,7 +234,7 @@ def resolve_interaction(
             raise ValueError(f"unknown interaction field: {sorted(unknown_fields)[0]}")
 
         # 3.2 逐个验证每个字段
-        for raw in fields:
+        for raw in typed_fields:
             # 跳过非字典类型的字段定义（防御性编程）
             if not isinstance(raw, dict):
                 continue
@@ -269,10 +277,14 @@ def resolve_interaction(
             # 3.2.3 验证选项字段（select、radio、checkbox）
             # 提取允许的选项值集合
             options = field.get("options")
-            allowed_values = {
-                str(item.get("value"))
-                for item in options if isinstance(item, dict) and item.get("value") is not None
-            } if isinstance(options, list) else set()
+            allowed_values: set[str] = set()
+            if isinstance(options, list):
+                for raw_option in cast(list[Any], options):
+                    if not isinstance(raw_option, dict):
+                        continue
+                    option = cast(dict[str, Any], raw_option)
+                    if option.get("value") is not None:
+                        allowed_values.add(str(option["value"]))
 
             # 单选/下拉选择：值必须是字符串且在允许值集合中
             if field_type in {"select", "radio"}:
@@ -281,9 +293,13 @@ def resolve_interaction(
 
             # 复选框：值必须是字符串列表且每个值都在允许值集合中
             if field_type == "checkbox":
+                selected_values = cast(list[Any], value) if isinstance(value, list) else None
                 if (
-                    not isinstance(value, list) or
-                    any(not isinstance(item, str) or item not in allowed_values for item in value)
+                    selected_values is None
+                    or any(
+                        not isinstance(item, str) or item not in allowed_values
+                        for item in selected_values
+                    )
                 ):
                     raise ValueError(f"invalid value for field: {field_id}")
 

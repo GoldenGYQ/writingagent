@@ -3,7 +3,7 @@
     "brand": "nanobot",
     "loading": {
       "connecting": "正在連線到 nanobot…",
-      "boot": "正在載入 nanobot…"
+      "boot": "正在載入 JLU Writing Agent…"
     },
     "error": {
       "title": "無法連線到 nanobot",
@@ -37,7 +37,7 @@
       "chat": "{{title}} · nanobot"
     },
     "meta": {
-      "description": "nanobot Web UI —— 與你的 nanobot 工作區對話。"
+      "description": "JLU Writing Agent —— 面向寫作、知識與審閱的互動式工作區。"
     }
   },
   "sidebar": {

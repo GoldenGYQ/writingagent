@@ -96,6 +96,12 @@ export default defineConfig(({ mode }) => {
       environment: "happy-dom",
       globals: true,
       setupFiles: ["./src/tests/setup.ts"],
+      // Keep the DOM-heavy suite stable on smaller CI runners. Running every
+      // file concurrently can starve animation timers and turn 2-3s tests into
+      // unrelated 5s timeouts.
+      minWorkers: 1,
+      maxWorkers: 4,
+      testTimeout: 10_000,
     },
   };
 });

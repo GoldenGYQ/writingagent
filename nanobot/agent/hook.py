@@ -65,17 +65,17 @@ class AgentTurnHookContext:
 class AgentHook:
     """
     Agent钩子基类，提供生命周期扩展点。
-    
+
     这个类定义了Agent执行过程中的所有钩子方法，允许外部代码在关键节点介入
     Agent的执行流程。所有方法都有默认实现（空操作或简单返回），子类可以
     选择性重写需要的方法。
-    
+
     设计理念：
     1. 最小化侵入：默认实现为空，不影响正常执行
     2. 生命周期完整：覆盖从开始到结束的所有关键节点
     3. 流式支持：支持流式输出的实时处理
     4. 工具调用监控：提供工具执行全过程的钩子
-    
+
     Attributes:
         _reraise: 是否在钩子异常时重新抛出（默认False，即吞掉异常）
     """
@@ -83,7 +83,7 @@ class AgentHook:
     def __init__(self, reraise: bool = False) -> None:
         """
         初始化钩子实例。
-        
+
         Args:
             reraise: 控制钩子异常处理策略
                 - True: 钩子抛出异常时，中断Agent执行并重新抛出
@@ -98,10 +98,10 @@ class AgentHook:
     def wants_streaming(self) -> bool:
         """
         声明钩子是否需要流式输出支持。
-        
+
         如果返回True，Agent将在生成过程中调用 on_stream() 方法，
         实现实时输出。如果返回False，Agent将批量生成结果后一次性输出。
-        
+
         Returns:
             bool: 是否需要流式支持，默认False
         """
@@ -114,14 +114,14 @@ class AgentHook:
     async def before_run(self, context: AgentRunHookContext) -> None:
         """
         在Agent核心执行前调用。
-        
+
         可用于：
         - 修改或过滤初始消息
         - 设置运行时变量
         - 权限验证
         - 记录开始日志
         - 初始化资源
-        
+
         Args:
             context: 运行上下文，包含初始消息列表
         """
@@ -130,13 +130,13 @@ class AgentHook:
     async def after_run(self, context: AgentRunHookContext) -> None:
         """
         在Agent核心执行完成后调用（成功情况下）。
-        
+
         可用于：
         - 处理或转换运行结果
         - 记录性能指标
         - 触发后续工作流
         - 格式化最终输出
-        
+
         Args:
             context: 运行上下文，包含完整的执行结果
         """
@@ -145,13 +145,13 @@ class AgentHook:
     async def on_error(self, context: AgentRunHookContext) -> None:
         """
         在Agent执行出错时调用。
-        
+
         可用于：
         - 记录详细错误日志
         - 发送告警通知
         - 进行错误恢复尝试
         - 清理资源
-        
+
         Args:
             context: 运行上下文，包含错误信息
         """
@@ -160,15 +160,15 @@ class AgentHook:
     async def on_finally(self, context: AgentRunHookContext) -> None:
         """
         在Agent执行结束时调用（无论成功还是失败）。
-        
+
         这是清理资源的最后机会，保证在finally块中执行。
-        
+
         可用于：
         - 释放文件句柄、数据库连接
         - 删除临时文件
         - 记录审计日志
         - 发送完成通知
-        
+
         Args:
             context: 运行上下文，包含最终状态
         """
@@ -181,14 +181,14 @@ class AgentHook:
     async def before_iteration(self, context: AgentHookContext) -> None:
         """
         在每次迭代（LLM调用）前调用。
-        
+
         多轮对话中，每次调用LLM前都会触发此钩子。
-        
+
         可用于：
         - 动态注入系统提示
         - 调整温度等参数
         - 记录迭代开始
-        
+
         Args:
             context: 钩子上下文，包含当前消息状态
         """
@@ -197,12 +197,12 @@ class AgentHook:
     async def after_iteration(self, context: AgentHookContext) -> None:
         """
         在每次迭代（LLM调用）后调用。
-        
+
         可用于：
         - 处理每次迭代的结果
         - 检查是否应该继续
         - 记录迭代完成
-        
+
         Args:
             context: 钩子上下文，包含当前消息状态
         """
@@ -215,14 +215,14 @@ class AgentHook:
     async def on_stream(self, context: AgentHookContext, delta: str) -> None:
         """
         在流式输出时，收到每个增量文本块时调用。
-        
+
         需要先通过 wants_streaming() 声明启用流式支持。
-        
+
         可用于：
         - 实时转发到WebSocket
         - 实时累积并分析
         - 实时展示给用户
-        
+
         Args:
             context: 钩子上下文
             delta: 本次增量的文本内容
@@ -232,7 +232,7 @@ class AgentHook:
     async def on_stream_end(self, context: AgentHookContext, *, resuming: bool) -> None:
         """
         在流式输出结束时调用。
-        
+
         Args:
             context: 钩子上下文
             resuming: 是否是因为恢复而结束
@@ -248,12 +248,12 @@ class AgentHook:
     async def emit_reasoning(self, reasoning_content: str | None) -> None:
         """
         发送推理内容（如思维链）。
-        
+
         可用于：
         - 显示模型的思考过程
         - 收集推理数据
         - 调试分析
-        
+
         Args:
             reasoning_content: 推理内容文本，None表示清空
         """
@@ -262,7 +262,7 @@ class AgentHook:
     async def emit_reasoning_end(self) -> None:
         """
         标记推理流结束。
-        
+
         用于缓冲推理内容的钩子（如为了UI更新），在此处刷新和冻结。
         一次性钩子可以忽略此方法。
         """
@@ -279,12 +279,12 @@ class AgentHook:
     ) -> None:
         """
         观察Provider托管的工具生命周期事件。
-        
+
         用于监控外部工具的执行状态，如：
         - 工具开始执行
         - 工具执行进度
         - 工具执行完成
-        
+
         Args:
             context: 钩子上下文
             event: 工具事件数据，包含事件类型和详细信息
@@ -294,12 +294,12 @@ class AgentHook:
     async def before_execute_tools(self, context: AgentHookContext) -> None:
         """
         在批量执行工具前调用。
-        
+
         可用于：
         - 预处理工具调用列表
         - 检查工具权限
         - 记录开始执行
-        
+
         Args:
             context: 钩子上下文，包含待执行的工具调用
         """
@@ -314,12 +314,12 @@ class AgentHook:
     ) -> None:
         """
         在单个工具执行前调用。
-        
+
         可用于：
         - 验证工具调用参数
         - 修改工具参数
         - 记录工具执行开始
-        
+
         Args:
             context: 钩子上下文
             tool_call: 工具调用请求对象
@@ -338,12 +338,12 @@ class AgentHook:
     ) -> None:
         """
         在单个工具执行完成后调用（成功情况下）。
-        
+
         可用于：
         - 处理或转换工具结果
         - 验证工具输出
         - 记录工具执行指标
-        
+
         Args:
             context: 钩子上下文
             tool_call: 工具调用请求对象
@@ -363,12 +363,12 @@ class AgentHook:
     ) -> None:
         """
         在单个工具执行出错时调用。
-        
+
         可用于：
         - 记录工具错误日志
         - 尝试降级或重试
         - 向用户反馈错误信息
-        
+
         Args:
             context: 钩子上下文
             tool_call: 工具调用请求对象
@@ -385,18 +385,18 @@ class AgentHook:
     def finalize_content(self, context: AgentHookContext, content: str | None) -> str | None:
         """
         对最终内容进行后处理。
-        
+
         这是一个同步方法，用于内容的最终格式化。
-        
+
         可用于：
         - 添加或移除特定标记
         - 格式化输出结构
         - 过滤敏感信息
-        
+
         Args:
             context: 钩子上下文
             content: 原始内容
-            
+
         Returns:
             str | None: 处理后的内容
         """
