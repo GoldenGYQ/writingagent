@@ -45,6 +45,7 @@ dist/
 build/
 *.manifest
 *.spec
+!packaging/windows/writing-agent.spec
 pip-wheel-metadata/
 share/python-wheels/
 
