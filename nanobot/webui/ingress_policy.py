@@ -42,6 +42,7 @@ class WebUIIngressPolicy:
         return None
 
     def bootstrap_limits(self, *, max_frame_bytes: int) -> dict[str, object]:
+        attachments = configured_attachment_limits(self.attachments)
         return {
             "transport": {
                 "max_frame_bytes": max_frame_bytes,
@@ -49,22 +50,41 @@ class WebUIIngressPolicy:
             },
             "message": {"max_text_bytes": self.message.max_text_bytes},
             "attachments": {
-                "max_count": self.attachments.max_count,
-                "max_file_bytes": self.attachments.max_file_bytes,
-                "max_total_bytes": self.attachments.max_total_bytes,
+                "max_count": attachments.max_count,
+                "max_file_bytes": attachments.max_file_bytes,
+                "max_total_bytes": attachments.max_total_bytes,
             },
         }
 
     def minimum_full_policy_frame_bytes(self) -> int:
         """Conservative frame size needed for every policy-valid message."""
-        encoded_attachments = 4 * math.ceil(self.attachments.max_total_bytes / 3)
-        data_url_allowance = self.attachments.max_count * 128
+        attachments = configured_attachment_limits(self.attachments)
+        encoded_attachments = 4 * math.ceil(attachments.max_total_bytes / 3)
+        data_url_allowance = attachments.max_count * 128
         return (
             encoded_attachments
             + data_url_allowance
             + self.message.max_text_bytes
             + self.envelope_reserve_bytes
         )
+
+
+def configured_attachment_limits(
+    fallback: AttachmentIngressLimits | None = None,
+) -> AttachmentIngressLimits:
+    """Read the current WebUI upload policy without restarting the gateway."""
+    base = fallback or AttachmentIngressLimits()
+    try:
+        from nanobot.config.loader import load_config
+
+        upload = load_config().tools.webui_upload
+        return AttachmentIngressLimits(
+            max_count=upload.max_count,
+            max_file_bytes=upload.max_file_mb * 1024 * 1024,
+            max_total_bytes=upload.max_total_mb * 1024 * 1024,
+        )
+    except Exception:
+        return base
 
 
 DEFAULT_WEBUI_INGRESS_POLICY = WebUIIngressPolicy()

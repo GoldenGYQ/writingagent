@@ -1,4 +1,7 @@
 param(
+    [string]$Version,
+    [switch]$PublishRelease,
+    [string]$Repository = "GoldenGYQ/writingagent",
     [switch]$SkipWebBuild,
     [switch]$SkipDesktopBuild,
     [switch]$SkipInstaller
@@ -19,7 +22,22 @@ $versionMatch = [regex]::Match($pyproject, '(?m)^version\s*=\s*"([^"]+)"')
 if (-not $versionMatch.Success) {
     throw "Could not read the application version from pyproject.toml."
 }
-$appVersion = $versionMatch.Groups[1].Value
+$appVersion = if ($Version) { $Version.Trim().TrimStart("v", "V") } else { $versionMatch.Groups[1].Value }
+if ($appVersion -notmatch '^\d+\.\d+\.\d+$') {
+    throw "Invalid version '$appVersion'. Use a semantic version such as 0.3.1."
+}
+if ($Version) {
+    $updatedPyproject = [regex]::Replace(
+        $pyproject,
+        '(?m)^version\s*=\s*"[^"]+"',
+        "version = `"$appVersion`"",
+        1
+    )
+    if ($updatedPyproject -ne $pyproject) {
+        Set-Content -LiteralPath (Join-Path $projectRoot "pyproject.toml") -Value $updatedPyproject -Encoding utf8NoBOM
+    }
+    Write-Host "Project version updated to $appVersion"
+}
 
 if (-not $SkipWebBuild) {
     Push-Location $webuiRoot
@@ -82,3 +100,30 @@ if (-not (Test-Path -LiteralPath $installer)) {
 }
 
 Write-Host "Installer created: $installer"
+
+$checksumPath = "$installer.sha256"
+$hash = (Get-FileHash -Algorithm SHA256 -LiteralPath $installer).Hash.ToLowerInvariant()
+Set-Content -LiteralPath $checksumPath -Value "$hash  $(Split-Path -Leaf $installer)" -Encoding ascii
+Write-Host "Checksum created: $checksumPath"
+
+if ($PublishRelease) {
+    if (-not (Get-Command gh -ErrorAction SilentlyContinue)) {
+        throw "GitHub CLI is required for -PublishRelease. Install it with: winget install --id GitHub.cli -e"
+    }
+    if (-not $Repository -or $Repository -notmatch '^[^/]+/[^/]+$') {
+        throw "Repository must have the form owner/repository."
+    }
+    $tag = "v$appVersion"
+    & gh release view $tag --repo $Repository *> $null
+    if ($LASTEXITCODE -eq 0) {
+        throw "GitHub Release $tag already exists in $Repository. Choose a new version."
+    }
+    & gh release create $tag $installer $checksumPath `
+        --repo $Repository `
+        --title "JLU Writing Agent $tag" `
+        --generate-notes
+    if ($LASTEXITCODE -ne 0) {
+        throw "GitHub Release publication failed. Check 'gh auth status' and repository permissions."
+    }
+    Write-Host "GitHub Release published: $Repository/$tag"
+}

@@ -816,6 +816,32 @@ def test_update_agent_settings_persists_knowledge_retrieval_profile(
     assert saved.expand_hops == 2
 
 
+def test_webui_upload_limits_are_configurable_without_restart(
+    tmp_path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    config_path = tmp_path / "config.json"
+    save_config(Config(), config_path)
+    monkeypatch.setattr("nanobot.config.loader._current_config_path", config_path)
+
+    payload = update_agent_settings({
+        "webui_upload_max_count": ["8"],
+        "webui_upload_max_file_mb": ["12"],
+        "webui_upload_max_total_mb": ["48"],
+    })
+
+    assert payload["requires_restart"] is False
+    assert payload["webui_upload"] == {
+        "max_count": 8,
+        "max_file_mb": 12,
+        "max_total_mb": 48,
+    }
+    saved = load_config(config_path).tools.webui_upload
+    assert saved.max_count == 8
+    assert saved.max_file_mb == 12
+    assert saved.max_total_mb == 48
+
+
 def test_update_agent_settings_rejects_invalid_knowledge_retrieval_bounds(
     tmp_path,
     monkeypatch: pytest.MonkeyPatch,
@@ -826,6 +852,38 @@ def test_update_agent_settings_rejects_invalid_knowledge_retrieval_bounds(
 
     with pytest.raises(WebUISettingsError, match="between 0 and 2"):
         update_agent_settings({"knowledge_retrieval_expand_hops": ["3"]})
+
+
+def test_document_reading_settings_are_exposed_and_persisted(
+    tmp_path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    config_path = tmp_path / "config.json"
+    save_config(Config(), config_path)
+    monkeypatch.setattr("nanobot.config.loader._current_config_path", config_path)
+
+    payload = update_agent_settings({
+        "document_read_parameter_mode": ["manual"],
+        "document_read_chunk_chars": ["24000"],
+        "tool_result_parameter_mode": ["manual"],
+        "max_tool_result_chars": ["32000"],
+        "inflight_compaction_target_ratio": ["0.96"],
+    })
+
+    assert payload["requires_restart"] is True
+    assert payload["document_reading"] == {
+        "parameter_mode": "manual",
+        "chunk_chars": 24_000,
+        "effective_chunk_chars": 24_000,
+        "tool_result_parameter_mode": "manual",
+        "max_tool_result_chars": 32_000,
+        "effective_max_tool_result_chars": 32_000,
+        "inflight_compaction_target_ratio": 0.96,
+    }
+    saved = load_config(config_path)
+    assert saved.tools.file.read_chunk_chars == 24_000
+    assert saved.agents.defaults.max_tool_result_chars == 32_000
+    assert saved.agents.defaults.inflight_compaction_target_ratio == 0.96
 
 
 def test_update_model_configuration_preserves_custom_context_windows(

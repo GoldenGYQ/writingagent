@@ -131,6 +131,14 @@ class KnowledgeRetrievalConfig(Base):
     embedding_model: str = "BAAI/bge-small-zh-v1.5"
 
 
+class WebUIUploadConfig(Base):
+    """Semantic limits for files submitted through the WebUI."""
+
+    max_count: int = Field(default=4, ge=1, le=16)
+    max_file_mb: int = Field(default=6, ge=1, le=40)
+    max_total_mb: int = Field(default=24, ge=1, le=160)
+
+
 class AgentDefaults(Base):
     """Default agent configuration."""
 
@@ -148,7 +156,8 @@ class AgentDefaults(Base):
     max_tool_iterations: int = 200
     max_concurrent_subagents: int = Field(default=1, ge=1)
     fail_on_tool_error: bool = True
-    max_tool_result_chars: int = 16_000
+    tool_result_parameter_mode: Literal["auto", "manual"] = "auto"
+    max_tool_result_chars: int = Field(default=16_000, ge=4_000, le=64_000)
     # When an in-flight turn exceeds the model input budget, compact only
     # until this fraction of the budget remains.  A higher value preserves
     # more recent tool output while still leaving headroom below the hard
@@ -415,6 +424,7 @@ class ToolsConfig(Base):
     web: WebToolsConfig = Field(default_factory=lambda: _lazy_default("nanobot.agent.tools.web", "WebToolsConfig"))
     exec: ExecToolConfig = Field(default_factory=lambda: _lazy_default("nanobot.agent.tools.shell", "ExecToolConfig"))
     file: FileToolsConfig = Field(default_factory=lambda: _lazy_default("nanobot.agent.tools.filesystem", "FileToolsConfig"))
+    webui_upload: WebUIUploadConfig = Field(default_factory=WebUIUploadConfig)
     cli_apps: CliAppsToolConfig = Field(default_factory=lambda: _lazy_default("nanobot.agent.tools.cli_apps", "CliAppsToolConfig"))
     my: MyToolConfig = Field(default_factory=lambda: _lazy_default("nanobot.agent.tools.self", "MyToolConfig"))
     image_generation: ImageGenerationToolConfig = Field(

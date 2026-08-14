@@ -15,7 +15,10 @@ from nanobot.webui.attachment_ingress import (
     AttachmentIngressResult,
     store_inbound_attachments,
 )
-from nanobot.webui.ingress_policy import AttachmentIngressLimits
+from nanobot.webui.ingress_policy import (
+    AttachmentIngressLimits,
+    configured_attachment_limits,
+)
 from nanobot.webui.media_api import (
     attach_signed_media_urls,
     serve_signed_media,
@@ -54,7 +57,7 @@ class WebUIMediaGateway:
             media,
             media_dir=self._media_dir("websocket"),
             logger=self.logger,
-            limits=self.attachment_limits,
+            limits=configured_attachment_limits(self.attachment_limits),
         )
 
     def serve_signed_media(

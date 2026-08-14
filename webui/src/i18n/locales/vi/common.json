@@ -61,6 +61,7 @@
     }
   },
   "settings": {
+    "knowledge": {"title":"Knowledge retrieval","personalized":"Personalized, bounded retrieval","autoSummary":"Auto selects hybrid retrieval, bounds the result set, and expands one graph hop when useful.","manualSummary":"These values are used when a retrieval call does not provide its own options; explicit tool arguments win.","parameterMode":"Parameter mode","parameterModeHelp":"Choose safe defaults or your retrieval profile.","mode":"Retrieval mode","modeHelp":"Hybrid combines the local index with graph context; vector and graph modes suit focused investigations.","embedding":"Embedding engine","embeddingHelp":"Lightweight needs no model; Semantic uses a local Chinese BGE ONNX model.","lightweight":"Lightweight","semantic":"Semantic","queryRewrite":"Query rewrite","queryRewriteHelp":"Controls the bounded query list used by knowledge_research.","topK":"Top-K documents","topKHelp":"Maximum Wiki documents returned by one search.","expandHops":"Graph expansion","expandHopsHelp":"How many undirected relationship hops to include (0–2).","budget":"Research budget","budgetHelp":"Maximum bounded sub-queries for knowledge_research.","minDocuments":"Evidence target","minDocumentsHelp":"Stop after this many distinct documents are found.","unsaved":"Save your retrieval profile; it applies to the next Knowledge tool call.","documentReading":"Document reading & context","boundedReading":"Bounded reads prevent tool-output loops","boundedReadingHelp":"Read chunks and retention control how much content remains in context.","readMode":"Document read mode","readModeHelp":"Auto uses a conservative chunk; Manual lets you tune one bounded read.","readChunk":"Read chunk","readChunkHelp":"Maximum characters returned by one text or DOCX range.","retentionMode":"Tool-result retention mode","retentionModeHelp":"Controls the per-result cap before compaction.","retentionBudget":"Tool-result budget","retentionBudgetHelp":"Maximum retained characters for one tool result.","compactionTarget":"Overflow retention target","compactionTargetHelp":"Target percentage for compacting older tool results.","uploadMaxCount":"Attachment count","uploadMaxCountHelp":"Maximum files accepted in one WebUI message.","uploadMaxFile":"Single-file limit","uploadMaxFileHelp":"Maximum size of one uploaded file.","uploadMaxTotal":"Total upload limit","uploadMaxTotalHelp":"Maximum combined file size in one message.","readUnsaved":"Save and restart the runtime to apply document reading limits."},
     "backToChat": "Quay lại chat",
     "sidebar": {
       "title": "Cài đặt",
@@ -458,7 +459,8 @@
       "checking": "Đang kiểm tra...",
       "checkForUpdates": "Kiểm tra bản cập nhật",
       "upToDate": "Bạn đang dùng phiên bản mới nhất",
-      "updateAvailable": "Có bản cập nhật v{{version}}"
+      "updateAvailable": "Có bản cập nhật v{{version}}",
+      "downloadInstaller": "Tải trình cài đặt"
     },
     "mcp": {
       "allCategories": "Tất cả danh mục",

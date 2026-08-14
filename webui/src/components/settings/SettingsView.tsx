@@ -245,6 +245,14 @@ type KnowledgeRetrievalForm = {
   topK: number;
   expandHops: number;
   embeddingBackend: "feature_hash" | "fastembed";
+  documentReadParameterMode: "auto" | "manual";
+  documentReadChunkChars: number;
+  toolResultParameterMode: "auto" | "manual";
+  maxToolResultChars: number;
+  inflightCompactionTargetPercent: number;
+  uploadMaxCount: number;
+  uploadMaxFileMb: number;
+  uploadMaxTotalMb: number;
 };
 
 type PendingRestartSection = "runtime" | "browser" | "image";
@@ -534,6 +542,14 @@ const DEFAULT_KNOWLEDGE_RETRIEVAL_FORM: KnowledgeRetrievalForm = {
   topK: 8,
   expandHops: 1,
   embeddingBackend: "feature_hash",
+  documentReadParameterMode: "auto",
+  documentReadChunkChars: 12_000,
+  toolResultParameterMode: "auto",
+  maxToolResultChars: 16_000,
+  inflightCompactionTargetPercent: 92,
+  uploadMaxCount: 4,
+  uploadMaxFileMb: 6,
+  uploadMaxTotalMb: 24,
 };
 
 const DEFAULT_WEB_SEARCH_FORM: WebSearchSettingsUpdate = {
@@ -608,6 +624,7 @@ function agentDraftFromPayload(
 
 function knowledgeRetrievalFormFromPayload(payload: SettingsPayload): KnowledgeRetrievalForm {
   const retrieval = payload.knowledge_retrieval;
+  const reading = payload.document_reading;
   return {
     parameterMode: retrieval?.parameter_mode ?? DEFAULT_KNOWLEDGE_RETRIEVAL_FORM.parameterMode,
     mode: retrieval?.mode ?? DEFAULT_KNOWLEDGE_RETRIEVAL_FORM.mode,
@@ -617,6 +634,16 @@ function knowledgeRetrievalFormFromPayload(payload: SettingsPayload): KnowledgeR
     topK: retrieval?.top_k ?? DEFAULT_KNOWLEDGE_RETRIEVAL_FORM.topK,
     expandHops: retrieval?.expand_hops ?? DEFAULT_KNOWLEDGE_RETRIEVAL_FORM.expandHops,
     embeddingBackend: retrieval?.embedding_backend ?? DEFAULT_KNOWLEDGE_RETRIEVAL_FORM.embeddingBackend,
+    documentReadParameterMode: reading?.parameter_mode ?? DEFAULT_KNOWLEDGE_RETRIEVAL_FORM.documentReadParameterMode,
+    documentReadChunkChars: reading?.chunk_chars ?? DEFAULT_KNOWLEDGE_RETRIEVAL_FORM.documentReadChunkChars,
+    toolResultParameterMode: reading?.tool_result_parameter_mode ?? DEFAULT_KNOWLEDGE_RETRIEVAL_FORM.toolResultParameterMode,
+    maxToolResultChars: reading?.max_tool_result_chars ?? DEFAULT_KNOWLEDGE_RETRIEVAL_FORM.maxToolResultChars,
+    inflightCompactionTargetPercent: Math.round(
+      (reading?.inflight_compaction_target_ratio ?? 0.92) * 100,
+    ),
+    uploadMaxCount: payload.webui_upload?.max_count ?? DEFAULT_KNOWLEDGE_RETRIEVAL_FORM.uploadMaxCount,
+    uploadMaxFileMb: payload.webui_upload?.max_file_mb ?? DEFAULT_KNOWLEDGE_RETRIEVAL_FORM.uploadMaxFileMb,
+    uploadMaxTotalMb: payload.webui_upload?.max_total_mb ?? DEFAULT_KNOWLEDGE_RETRIEVAL_FORM.uploadMaxTotalMb,
   };
 }
 
@@ -1212,7 +1239,15 @@ export function SettingsView({
       knowledgeRetrievalForm.minDocuments !== current.minDocuments ||
       knowledgeRetrievalForm.topK !== current.topK ||
       knowledgeRetrievalForm.expandHops !== current.expandHops ||
-      knowledgeRetrievalForm.embeddingBackend !== current.embeddingBackend
+      knowledgeRetrievalForm.embeddingBackend !== current.embeddingBackend ||
+      knowledgeRetrievalForm.documentReadParameterMode !== current.documentReadParameterMode ||
+      knowledgeRetrievalForm.documentReadChunkChars !== current.documentReadChunkChars ||
+      knowledgeRetrievalForm.toolResultParameterMode !== current.toolResultParameterMode ||
+      knowledgeRetrievalForm.maxToolResultChars !== current.maxToolResultChars
+      || knowledgeRetrievalForm.inflightCompactionTargetPercent !== current.inflightCompactionTargetPercent
+      || knowledgeRetrievalForm.uploadMaxCount !== current.uploadMaxCount
+      || knowledgeRetrievalForm.uploadMaxFileMb !== current.uploadMaxFileMb
+      || knowledgeRetrievalForm.uploadMaxTotalMb !== current.uploadMaxTotalMb
     );
   }, [knowledgeRetrievalForm, settings]);
 
@@ -1582,8 +1617,20 @@ export function SettingsView({
         knowledgeRetrievalTopK: knowledgeRetrievalForm.topK,
         knowledgeRetrievalExpandHops: knowledgeRetrievalForm.expandHops,
         knowledgeRetrievalEmbeddingBackend: knowledgeRetrievalForm.embeddingBackend,
+        documentReadParameterMode: knowledgeRetrievalForm.documentReadParameterMode,
+        documentReadChunkChars: knowledgeRetrievalForm.documentReadChunkChars,
+        toolResultParameterMode: knowledgeRetrievalForm.toolResultParameterMode,
+        maxToolResultChars: knowledgeRetrievalForm.maxToolResultChars,
+        inflightCompactionTargetRatio: knowledgeRetrievalForm.inflightCompactionTargetPercent / 100,
+        webuiUploadMaxCount: knowledgeRetrievalForm.uploadMaxCount,
+        webuiUploadMaxFileMb: knowledgeRetrievalForm.uploadMaxFileMb,
+        webuiUploadMaxTotalMb: knowledgeRetrievalForm.uploadMaxTotalMb,
       });
       applyPayload(payload);
+      if (payload.requires_restart) {
+        setPendingRestartSections((prev) => ({ ...prev, runtime: true }));
+      }
+      await maybeRestartHostEngine(payload);
       setError(null);
     } catch (err) {
       setError((err as Error).message);
@@ -2938,7 +2985,7 @@ function VersionCheckRow({ currentVersion }: { currentVersion?: string }) {
   const [checking, setChecking] = useState(false);
   const [result, setResult] = useState<
     | { type: "up-to-date" }
-    | { type: "update"; latestVersion: string; pypiUrl?: string }
+    | { type: "update"; latestVersion: string; releaseUrl?: string | null; downloadUrl?: string | null }
     | { type: "error"; message: string }
     | null
   >(null);
@@ -2952,7 +2999,8 @@ function VersionCheckRow({ currentVersion }: { currentVersion?: string }) {
         setResult({
           type: "update",
           latestVersion: res.updateAvailable.latestVersion,
-          pypiUrl: res.updateAvailable.pypiUrl,
+          releaseUrl: res.updateAvailable.releaseUrl,
+          downloadUrl: res.updateAvailable.downloadUrl,
         });
       } else {
         setResult({ type: "up-to-date" });
@@ -3004,14 +3052,25 @@ function VersionCheckRow({ currentVersion }: { currentVersion?: string }) {
               defaultValue: "Update available v{{version}}",
               version: result.latestVersion,
             })}
-            {result.pypiUrl ? (
+            {result.releaseUrl ? (
               <a
-                href={result.pypiUrl}
+                href={result.releaseUrl}
                 target="_blank"
                 rel="noopener noreferrer"
                 className="inline-flex items-center gap-0.5 underline-offset-2 hover:underline"
               >
-                PyPI
+                GitHub Release
+                <ExternalLink className="h-2.5 w-2.5" aria-hidden />
+              </a>
+            ) : null}
+            {result.downloadUrl ? (
+              <a
+                href={result.downloadUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="inline-flex items-center gap-0.5 underline-offset-2 hover:underline"
+              >
+                {tx("settings.about.downloadInstaller", "Download installer")}
                 <ExternalLink className="h-2.5 w-2.5" aria-hidden />
               </a>
             ) : null}
@@ -8446,6 +8505,8 @@ function KnowledgeRetrievalSettings({
   const { t } = useTranslation();
   const tx = (key: string, fallback: string) => t(key, { defaultValue: fallback });
   const automatic = form.parameterMode === "auto";
+  const automaticRead = form.documentReadParameterMode === "auto";
+  const automaticRetention = form.toolResultParameterMode === "auto";
   const autoSummary = tx(
     "settings.knowledge.autoSummary",
     "Auto selects hybrid retrieval, keeps the result set bounded, and expands one graph hop when useful.",
@@ -8551,6 +8612,84 @@ function KnowledgeRetrievalSettings({
             saving={saving}
             pendingRestart={false}
             dirtyMessage={tx("settings.knowledge.unsaved", "Save your retrieval profile; it applies to the next Knowledge tool call.")}
+            onSave={onSave}
+          />
+        </SettingsGroup>
+      </section>
+      <section>
+        <SettingsSectionTitle>{tx("settings.knowledge.documentReading", "Document reading & context")}</SettingsSectionTitle>
+        <div className="mb-3 rounded-[22px] border border-amber-500/15 bg-amber-500/[0.06] px-4 py-4 text-[13px] leading-5 text-muted-foreground sm:px-5">
+          <div className="font-medium text-foreground">{tx("settings.knowledge.boundedReading", "Bounded reads prevent tool-output loops")}</div>
+          <p className="mt-1">{tx("settings.knowledge.boundedReadingHelp", "The read chunk controls how much of a document one call returns. Tool-result retention controls how much of a single result remains in model context. Larger values consume the model window faster; pagination still applies.")}</p>
+        </div>
+        <SettingsGroup>
+          <SettingsRow
+            title={tx("settings.knowledge.readMode", "Document read mode")}
+            description={tx("settings.knowledge.readModeHelp", "Auto uses a conservative 12,000-character chunk. Manual lets you tune one bounded read.")}
+          >
+            <SegmentedControl
+              value={form.documentReadParameterMode}
+              options={[
+                { value: "auto", label: tx("settings.values.auto", "Auto") },
+                { value: "manual", label: tx("settings.values.manual", "Manual") },
+              ]}
+              onChange={(value) => setForm((prev) => ({ ...prev, documentReadParameterMode: value as KnowledgeRetrievalForm["documentReadParameterMode"] }))}
+            />
+          </SettingsRow>
+          <SettingsRow
+            title={tx("settings.knowledge.readChunk", "Read chunk")}
+            description={tx("settings.knowledge.readChunkHelp", "Maximum characters returned by one text or DOCX range before a continuation cursor is emitted.")}
+          >
+            {automaticRead ? <StatusPill>12,000 chars · auto</StatusPill> : <NumberInput value={form.documentReadChunkChars} min={2_000} max={64_000} onChange={(documentReadChunkChars) => setForm((prev) => ({ ...prev, documentReadChunkChars }))} suffix="chars" />}
+          </SettingsRow>
+          <SettingsRow
+            title={tx("settings.knowledge.retentionMode", "Tool-result retention mode")}
+            description={tx("settings.knowledge.retentionModeHelp", "Controls the per-result cap before long tool output is compacted or offloaded.")}
+          >
+            <SegmentedControl
+              value={form.toolResultParameterMode}
+              options={[
+                { value: "auto", label: tx("settings.values.auto", "Auto") },
+                { value: "manual", label: tx("settings.values.manual", "Manual") },
+              ]}
+              onChange={(value) => setForm((prev) => ({ ...prev, toolResultParameterMode: value as KnowledgeRetrievalForm["toolResultParameterMode"] }))}
+            />
+          </SettingsRow>
+          <SettingsRow
+            title={tx("settings.knowledge.retentionBudget", "Tool-result budget")}
+            description={tx("settings.knowledge.retentionBudgetHelp", "Maximum retained characters for one tool result. This does not increase the provider's context window.")}
+          >
+            {automaticRetention ? <StatusPill>16,000 chars · auto</StatusPill> : <NumberInput value={form.maxToolResultChars} min={4_000} max={64_000} onChange={(maxToolResultChars) => setForm((prev) => ({ ...prev, maxToolResultChars }))} suffix="chars" />}
+          </SettingsRow>
+          <SettingsRow
+            title={tx("settings.knowledge.compactionTarget", "Overflow retention target")}
+            description={tx("settings.knowledge.compactionTargetHelp", "When the full prompt would exceed the model input budget, compact older tool results until the prompt is below this percentage. A higher value preserves more context but leaves less safety margin.")}
+          >
+            {automaticRetention ? <StatusPill>92% · auto</StatusPill> : <NumberInput value={form.inflightCompactionTargetPercent} min={80} max={98} onChange={(inflightCompactionTargetPercent) => setForm((prev) => ({ ...prev, inflightCompactionTargetPercent }))} suffix="%" />}
+          </SettingsRow>
+          <SettingsRow
+            title={tx("settings.knowledge.uploadMaxCount", "Attachment count")}
+            description={tx("settings.knowledge.uploadMaxCountHelp", "Maximum files accepted in one WebUI message. Applies immediately to new uploads.")}
+          >
+            <NumberInput value={form.uploadMaxCount} min={1} max={16} onChange={(uploadMaxCount) => setForm((prev) => ({ ...prev, uploadMaxCount }))} suffix="files" />
+          </SettingsRow>
+          <SettingsRow
+            title={tx("settings.knowledge.uploadMaxFile", "Single-file limit")}
+            description={tx("settings.knowledge.uploadMaxFileHelp", "Maximum size of one uploaded file. The WebSocket transport limit remains a separate startup boundary.")}
+          >
+            <NumberInput value={form.uploadMaxFileMb} min={1} max={40} onChange={(uploadMaxFileMb) => setForm((prev) => ({ ...prev, uploadMaxFileMb }))} suffix="MB" />
+          </SettingsRow>
+          <SettingsRow
+            title={tx("settings.knowledge.uploadMaxTotal", "Total upload limit")}
+            description={tx("settings.knowledge.uploadMaxTotalHelp", "Maximum combined size of files in one message. Applies immediately without restarting the runtime.")}
+          >
+            <NumberInput value={form.uploadMaxTotalMb} min={1} max={160} onChange={(uploadMaxTotalMb) => setForm((prev) => ({ ...prev, uploadMaxTotalMb }))} suffix="MB" />
+          </SettingsRow>
+          <RestartSettingsFooter
+            dirty={dirty}
+            saving={saving}
+            pendingRestart={false}
+            dirtyMessage={tx("settings.knowledge.readUnsaved", "Save and restart the runtime to apply document reading limits.")}
             onSave={onSave}
           />
         </SettingsGroup>

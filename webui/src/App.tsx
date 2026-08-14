@@ -139,6 +139,7 @@ const SETTINGS_SECTION_KEYS: SettingsSectionKey[] = [
   "voice",
   "browser",
   "channels",
+  "knowledge",
   "apps",
   "automations",
   "skills",

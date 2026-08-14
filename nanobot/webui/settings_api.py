@@ -1277,6 +1277,28 @@ def settings_payload(
             "embedding_backend": defaults.knowledge_retrieval.embedding_backend,
             "embedding_model": defaults.knowledge_retrieval.embedding_model,
         },
+        "document_reading": {
+            "parameter_mode": config.tools.file.read_parameter_mode,
+            "chunk_chars": config.tools.file.read_chunk_chars,
+            "effective_chunk_chars": (
+                config.tools.file.read_chunk_chars
+                if config.tools.file.read_parameter_mode == "manual"
+                else 12_000
+            ),
+            "tool_result_parameter_mode": defaults.tool_result_parameter_mode,
+            "max_tool_result_chars": defaults.max_tool_result_chars,
+            "effective_max_tool_result_chars": (
+                defaults.max_tool_result_chars
+                if defaults.tool_result_parameter_mode == "manual"
+                else 16_000
+            ),
+            "inflight_compaction_target_ratio": defaults.inflight_compaction_target_ratio,
+        },
+        "webui_upload": {
+            "max_count": config.tools.webui_upload.max_count,
+            "max_file_mb": config.tools.webui_upload.max_file_mb,
+            "max_total_mb": config.tools.webui_upload.max_total_mb,
+        },
         "model_presets": model_presets,
         "model_call_order": model_call_order,
         "model_call_order_editable": model_call_order_editable,
@@ -1393,6 +1415,34 @@ def update_agent_settings(query: QueryParams) -> dict[str, Any]:
     changed = False
     restart_required = False
 
+    upload = config.tools.webui_upload
+    upload_max_count = _parse_bounded_int(
+        _query_first_alias(query, "webui_upload_max_count", "webuiUploadMaxCount"),
+        "webui_upload_max_count",
+        minimum=1,
+        maximum=16,
+    )
+    upload_max_file_mb = _parse_bounded_int(
+        _query_first_alias(query, "webui_upload_max_file_mb", "webuiUploadMaxFileMb"),
+        "webui_upload_max_file_mb",
+        minimum=1,
+        maximum=40,
+    )
+    upload_max_total_mb = _parse_bounded_int(
+        _query_first_alias(query, "webui_upload_max_total_mb", "webuiUploadMaxTotalMb"),
+        "webui_upload_max_total_mb",
+        minimum=1,
+        maximum=160,
+    )
+    for field, value in (
+        ("max_count", upload_max_count),
+        ("max_file_mb", upload_max_file_mb),
+        ("max_total_mb", upload_max_total_mb),
+    ):
+        if value is not None and getattr(upload, field) != value:
+            setattr(upload, field, value)
+            changed = True
+
     if "model_preset" in query or "modelPreset" in query:
         preset = (_query_first_alias(query, "model_preset", "modelPreset") or "").strip()
         preset_value = None if not preset or preset == "default" else preset
@@ -1479,6 +1529,87 @@ def update_agent_settings(query: QueryParams) -> dict[str, Any]:
             defaults.tool_hint_max_length = parsed
             changed = True
             restart_required = True
+
+    file_config = config.tools.file
+    read_parameter_mode = _parse_enum(
+        _query_first_alias(
+            query,
+            "document_read_parameter_mode",
+            "documentReadParameterMode",
+        ),
+        "document_read_parameter_mode",
+        {"auto", "manual"},
+    )
+    read_chunk_chars = _parse_bounded_int(
+        _query_first_alias(query, "document_read_chunk_chars", "documentReadChunkChars"),
+        "document_read_chunk_chars",
+        minimum=2_000,
+        maximum=64_000,
+    )
+    tool_result_parameter_mode = _parse_enum(
+        _query_first_alias(
+            query,
+            "tool_result_parameter_mode",
+            "toolResultParameterMode",
+        ),
+        "tool_result_parameter_mode",
+        {"auto", "manual"},
+    )
+    max_tool_result_chars = _parse_bounded_int(
+        _query_first_alias(query, "max_tool_result_chars", "maxToolResultChars"),
+        "max_tool_result_chars",
+        minimum=4_000,
+        maximum=64_000,
+    )
+    inflight_compaction_target = _query_first_alias(
+        query,
+        "inflight_compaction_target_ratio",
+        "inflightCompactionTargetRatio",
+    )
+    parsed_compaction_target: float | None = None
+    if inflight_compaction_target is not None:
+        try:
+            parsed_compaction_target = float(inflight_compaction_target)
+        except ValueError:
+            raise WebUISettingsError(
+                "inflight_compaction_target_ratio must be a number"
+            ) from None
+        if parsed_compaction_target < 0.80 or parsed_compaction_target > 0.98:
+            raise WebUISettingsError(
+                "inflight_compaction_target_ratio must be between 0.80 and 0.98"
+            )
+    if read_parameter_mode is not None and file_config.read_parameter_mode != read_parameter_mode:
+        file_config.read_parameter_mode = cast(
+            Literal["auto", "manual"],
+            read_parameter_mode,
+        )
+        changed = True
+        restart_required = True
+    if read_chunk_chars is not None and file_config.read_chunk_chars != read_chunk_chars:
+        file_config.read_chunk_chars = read_chunk_chars
+        changed = True
+        restart_required = True
+    if (
+        tool_result_parameter_mode is not None
+        and defaults.tool_result_parameter_mode != tool_result_parameter_mode
+    ):
+        defaults.tool_result_parameter_mode = cast(
+            Literal["auto", "manual"],
+            tool_result_parameter_mode,
+        )
+        changed = True
+        restart_required = True
+    if max_tool_result_chars is not None and defaults.max_tool_result_chars != max_tool_result_chars:
+        defaults.max_tool_result_chars = max_tool_result_chars
+        changed = True
+        restart_required = True
+    if (
+        parsed_compaction_target is not None
+        and defaults.inflight_compaction_target_ratio != parsed_compaction_target
+    ):
+        defaults.inflight_compaction_target_ratio = parsed_compaction_target
+        changed = True
+        restart_required = True
 
     retrieval = defaults.knowledge_retrieval
     parameter_mode = _parse_enum(

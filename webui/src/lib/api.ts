@@ -535,7 +535,9 @@ export interface VersionCheckResult {
   updateAvailable: {
     currentVersion: string;
     latestVersion: string;
-    pypiUrl?: string;
+    releaseUrl?: string | null;
+    downloadUrl?: string | null;
+    assetName?: string | null;
   } | null;
 }
 
@@ -946,6 +948,30 @@ export async function updateSettings(
   if (update.botIcon !== undefined) query.set("bot_icon", update.botIcon);
   if (update.toolHintMaxLength !== undefined) {
     query.set("tool_hint_max_length", String(update.toolHintMaxLength));
+  }
+  if (update.documentReadParameterMode !== undefined) {
+    query.set("document_read_parameter_mode", update.documentReadParameterMode);
+  }
+  if (update.documentReadChunkChars !== undefined) {
+    query.set("document_read_chunk_chars", String(update.documentReadChunkChars));
+  }
+  if (update.toolResultParameterMode !== undefined) {
+    query.set("tool_result_parameter_mode", update.toolResultParameterMode);
+  }
+  if (update.maxToolResultChars !== undefined) {
+    query.set("max_tool_result_chars", String(update.maxToolResultChars));
+  }
+  if (update.inflightCompactionTargetRatio !== undefined) {
+    query.set("inflight_compaction_target_ratio", String(update.inflightCompactionTargetRatio));
+  }
+  if (update.webuiUploadMaxCount !== undefined) {
+    query.set("webui_upload_max_count", String(update.webuiUploadMaxCount));
+  }
+  if (update.webuiUploadMaxFileMb !== undefined) {
+    query.set("webui_upload_max_file_mb", String(update.webuiUploadMaxFileMb));
+  }
+  if (update.webuiUploadMaxTotalMb !== undefined) {
+    query.set("webui_upload_max_total_mb", String(update.webuiUploadMaxTotalMb));
   }
   if (update.knowledgeRetrievalParameterMode !== undefined) {
     query.set("knowledge_retrieval_parameter_mode", update.knowledgeRetrievalParameterMode);

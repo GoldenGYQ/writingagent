@@ -601,6 +601,20 @@ export interface SettingsPayload {
     embedding_backend: "feature_hash" | "fastembed";
     embedding_model: string;
   };
+  document_reading?: {
+    parameter_mode: "auto" | "manual";
+    chunk_chars: number;
+    effective_chunk_chars: number;
+    tool_result_parameter_mode: "auto" | "manual";
+    max_tool_result_chars: number;
+    effective_max_tool_result_chars: number;
+    inflight_compaction_target_ratio: number;
+  };
+  webui_upload?: {
+    max_count: number;
+    max_file_mb: number;
+    max_total_mb: number;
+  };
   model_presets: Array<{
     name: string;
     label: string;
@@ -1146,6 +1160,14 @@ export interface SettingsUpdate {
   knowledgeRetrievalTopK?: number;
   knowledgeRetrievalExpandHops?: number;
   knowledgeRetrievalEmbeddingBackend?: "feature_hash" | "fastembed";
+  documentReadParameterMode?: "auto" | "manual";
+  documentReadChunkChars?: number;
+  toolResultParameterMode?: "auto" | "manual";
+  maxToolResultChars?: number;
+  inflightCompactionTargetRatio?: number;
+  webuiUploadMaxCount?: number;
+  webuiUploadMaxFileMb?: number;
+  webuiUploadMaxTotalMb?: number;
 }
 
 export interface ModelConfigurationCreate {
